@@ -1,6 +1,6 @@
 interface:
   display_name: "Movie Resource Search"
-  short_description: "Search media titles and return PanSou resource links"
-  default_prompt: "Use $movie-search-and-download to search PanSou and return a relevance-ranked Markdown table with clickable provider links, extraction codes, and optional link-check status."
+  short_description: "Search media titles, return PanSou links, and save Quark shares into the user's cloud drive"
+  default_prompt: "Use $movie-search-and-download to search PanSou and return a relevance-ranked Markdown table with clickable provider links, extraction codes, and optional link-check status. When saving a Quark share, preview it first, reason from context to decide the canonical resource name and whether it is a series, then pass that Agent decision to scripts/quark-save.mjs with --context-name, --resource-type, and optional --rename-plan-json."
 policy:
   allow_implicit_invocation: true

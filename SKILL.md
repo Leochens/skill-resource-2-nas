@@ -7,6 +7,8 @@ description: Use when a user asks to search for a movie, TV title, animation, or
 
 Use this skill when the user asks to search for a movie/TV/media title or asks for download/resource links. The default upstream is the PanSou instance at `https://so.252035.xyz/`, backed by the `fish2018/pansou` API.
 
+Use `scripts/quark-save.mjs` when the user wants to save a Quark share link into their own Quark cloud drive folder. This workflow transfers the resource into the user's cloud drive only; it does not download files to the local filesystem.
+
 ## Default Endpoint
 
 - Site: `https://so.252035.xyz/`
@@ -151,6 +153,66 @@ Check states:
 - `unsupported`: platform not supported by checker.
 - `uncertain`: check failed or result uncertain.
 
+## Quark Cloud Save
+
+When the user provides a Quark share URL and a destination Quark folder URL, first preview the share contents:
+
+```bash
+node scripts/quark-save.mjs \
+  "https://pan.quark.cn/s/bcbd9d24fe5a#/list/share" \
+  "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E6%9D%A5%E8%87%AA%EF%BC%9A%E5%88%86%E4%BA%AB" \
+  --dry-run
+```
+
+The preview reads the public share only and does not need a Cookie. Actual saving requires the user's Quark Cookie through an environment variable:
+
+```bash
+QUARK_COOKIE='...' node scripts/quark-save.mjs \
+  "https://pan.quark.cn/s/bcbd9d24fe5a#/list/share" \
+  "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E6%9D%A5%E8%87%AA%EF%BC%9A%E5%88%86%E4%BA%AB" \
+  --context-name "你的友好邻居蜘蛛侠 第一季" \
+  --resource-type series
+```
+
+Security rules:
+
+- Treat `QUARK_COOKIE` as a full login credential. Never print it, commit it, or put it in docs.
+- Prefer `--cookie-env QUARK_COOKIE`; if the user uses another env var, pass that name with `--cookie-env`.
+- Keep the default interactive confirmation. Use `--yes` only when the user explicitly asked for non-interactive execution or has already confirmed the selected rows.
+
+Agent responsibility before saving:
+
+- The Agent must inspect the dry-run table plus the conversation/search context and decide the canonical resource name. Do not rely only on obfuscated share titles.
+- If the resource is a series, tell the user it is a series and pass `--resource-type series`.
+- If the share title contains separators or evasive characters, correct the resource name from context and pass it with `--context-name`.
+- For non-trivial naming, pass an explicit Agent decision plan with `--rename-plan-json`. The script applies this plan after Quark returns the saved top-level fids.
+
+Example Agent rename plan:
+
+```bash
+node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" \
+  --context-name "你的友好邻居蜘蛛侠 第一季" \
+  --resource-type series \
+  --rename-plan-json '[{"rank":1,"name":"你的友好邻居蜘蛛侠 第一季","reason":"Agent 根据搜索上下文修正规避字符和季名"}]'
+```
+
+Useful options:
+
+- `--select all|1,3|2-5`: choose which rows to save.
+- `--yes`: skip the confirmation prompt and save the selected rows immediately.
+- `--dry-run`: preview only; no Cookie needed and no save happens.
+- `--no-rename`: save without post-save rename.
+- `--resource-type auto|series|movie|collection`: pass the Agent's resource classification.
+- `--rename-plan-json '[{"rank":1,"name":"...","reason":"..."}]'`: pass Agent-decided final names. `rank` refers to the row number in the preview table.
+
+Quark API flow used by the helper:
+
+- `POST /1/clouddrive/share/sharepage/token`: obtain `stoken` for the share URL.
+- `GET /1/clouddrive/share/sharepage/detail`: list share rows for user confirmation.
+- `POST /1/clouddrive/share/sharepage/save`: save selected `fid_list` + `fid_token_list` to `to_pdir_fid`.
+- `GET /1/clouddrive/task`: poll the async save task until completion.
+- `POST /1/clouddrive/file/rename`: apply the Agent-approved rename plan to saved top-level files/folders.
+
 ## Workflow
 
 1. Search the exact user keyword first.
@@ -159,3 +221,4 @@ Check states:
 4. Report the best ranked candidates with note/title, provider, source, URL, extraction code, and update time when present.
 5. If the user asks whether links are valid, rerun with `--check-links` or call `/api/check/links` on the visible links and include each state/summary.
 6. If `/api/health` reports `auth_enabled: true`, authenticate first or ask the user for credentials/token.
+7. If the user asks to save a Quark result into their own drive, run `scripts/quark-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script.
