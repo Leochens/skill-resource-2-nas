@@ -1,6 +1,6 @@
 interface:
   display_name: "Movie Resource Search"
-  short_description: "Search titles and summarize provider availability"
-  default_prompt: "Use $movie-search-and-download to identify the right movie or TV result and summarize available resource providers safely."
+  short_description: "Search media titles and return PanSou resource links"
+  default_prompt: "Use $movie-search-and-download to search PanSou, identify relevant movie or TV resources, and return provider links, extraction codes, and optional link-check status."
 policy:
   allow_implicit_invocation: true

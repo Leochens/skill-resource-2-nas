@@ -1,20 +1,32 @@
 #!/usr/bin/env node
 
-import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
-const PROVIDERS = [
-  { name: "阿里网盘", patterns: [/aliyundrive\.com/i, /alipan\.com/i, /阿里网盘|阿里云盘/] },
-  { name: "夸克网盘", patterns: [/pan\.quark\.cn/i, /夸克网盘|夸克下载/] },
-  { name: "百度网盘", patterns: [/pan\.baidu\.com/i, /百度网盘|百度云盘/] },
-  { name: "迅雷云盘", patterns: [/pan\.xunlei\.com/i, /迅雷云盘|迅雷网盘/] },
-  { name: "ED2K", patterns: [/^ed2k:/i, /ed2k/i] },
-  { name: "磁力链接", patterns: [/^magnet:/i, /磁力/i] }
-];
+const DEFAULT_API_BASE = "https://so.252035.xyz/api";
+const DEFAULT_MAX_CANDIDATES = 20;
+const DEFAULT_RESULT_TYPE = "all";
+const DEFAULT_SOURCE_TYPE = "all";
+const DEFAULT_TIMEOUT_MS = 60_000;
 
-const DEFAULT_WAIT_MS = 8000;
-const MAX_DEFAULT_CANDIDATES = 5;
+const PROVIDER_LABELS = {
+  baidu: "百度网盘",
+  aliyun: "阿里云盘",
+  quark: "夸克网盘",
+  guangya: "光鸭云盘",
+  tianyi: "天翼云盘",
+  uc: "UC网盘",
+  mobile: "移动云盘",
+  "115": "115网盘",
+  pikpak: "PikPak",
+  xunlei: "迅雷网盘",
+  "123": "123网盘",
+  magnet: "磁力链接",
+  ed2k: "电驴链接",
+  others: "其他"
+};
+
+const CHECKABLE_TYPES = new Set(["baidu", "aliyun", "quark", "tianyi", "uc", "mobile", "115", "xunlei", "123"]);
 
 if (isCliEntryPoint()) {
   main().catch((error) => {
@@ -31,439 +43,449 @@ async function main() {
     process.exit(2);
   }
 
-  const playwright = loadPlaywright();
-  const browser = await playwright.chromium.launch({ headless: true });
-  const page = await browser.newPage({
-    viewport: { width: 1440, height: 1200 },
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-  });
-
-  try {
-    const searchAttempts = [];
-    let selectedSearch = null;
-
-    for (const query of generateSearchQueries(args.title)) {
-      const result = await searchOnce(page, query, args.waitMs, args.maxCandidates);
-      searchAttempts.push(result);
-      if (result.candidates.length > 0) {
-        selectedSearch = result;
-        break;
-      }
-    }
-
-    const candidates = [];
-    if (selectedSearch) {
-      for (const candidate of selectedSearch.candidates) {
-        const detail = await extractDetail(page, candidate.internalDetailUrl, args.waitMs);
-        candidates.push({
-          rank: candidate.rank,
-          name: detail.name || candidate.name,
-          releaseOrPremiere: detail.releaseOrPremiere || candidate.searchDate || "页面未标注",
-          director: detail.director || "页面未标注",
-          aliases: detail.aliases || "",
-          matchReason: buildMatchReason(args.title, detail, candidate),
-          resourceProviders: detail.resourceProviders,
-          downloadLinks: flattenDownloadLinks(detail.resourceProviders)
-        });
-      }
-    }
-
-    console.log(
-      JSON.stringify(
-        {
-          ok: true,
-          inputTitle: args.title,
-          selectedQuery: selectedSearch ? selectedSearch.query : null,
-          searchAttempts: searchAttempts.map((attempt) => ({
-            query: attempt.query,
-            recordCount: attempt.recordCount,
-            searchUrl: attempt.searchUrl,
-            candidateCount: attempt.candidates.length
-          })),
-          candidates,
-          output: {
-            directResourceLinks: "included_when_detected",
-            extractionCodes: "included_when_detected"
-          }
-        },
-        null,
-        2
-      )
-    );
-  } finally {
-    await browser.close();
+  const searchResult = await searchPanSou(args);
+  if (args.checkLinks) {
+    searchResult.linkChecks = await checkSearchResultLinks(args, searchResult.downloadLinks);
   }
+
+  console.log(JSON.stringify(searchResult, null, 2));
 }
 
 function parseArgs(argv) {
   const parsed = {
     title: "",
-    waitMs: DEFAULT_WAIT_MS,
-    maxCandidates: MAX_DEFAULT_CANDIDATES
+    apiBase: DEFAULT_API_BASE,
+    maxCandidates: DEFAULT_MAX_CANDIDATES,
+    resultType: DEFAULT_RESULT_TYPE,
+    sourceType: DEFAULT_SOURCE_TYPE,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    channels: [],
+    plugins: [],
+    cloudTypes: [],
+    include: [],
+    exclude: [],
+    ext: null,
+    filter: null,
+    concurrency: null,
+    refresh: false,
+    checkLinks: false,
+    viewToken: "",
+    proxyUrl: ""
   };
+  const positionals = [];
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--wait-ms") {
-      parsed.waitMs = Number(argv[++index] || DEFAULT_WAIT_MS);
+    if (arg === "--api-base") {
+      parsed.apiBase = argv[++index] || DEFAULT_API_BASE;
     } else if (arg === "--max-candidates") {
-      parsed.maxCandidates = Number(argv[++index] || MAX_DEFAULT_CANDIDATES);
-    } else if (!parsed.title) {
-      parsed.title = arg;
+      parsed.maxCandidates = Number(argv[++index] || DEFAULT_MAX_CANDIDATES);
+    } else if (arg === "--res") {
+      parsed.resultType = argv[++index] || DEFAULT_RESULT_TYPE;
+    } else if (arg === "--src") {
+      parsed.sourceType = argv[++index] || DEFAULT_SOURCE_TYPE;
+    } else if (arg === "--channels") {
+      parsed.channels = parseList(argv[++index]);
+    } else if (arg === "--plugins") {
+      parsed.plugins = parseList(argv[++index]);
+    } else if (arg === "--cloud-types") {
+      parsed.cloudTypes = parseList(argv[++index]);
+    } else if (arg === "--include") {
+      parsed.include = parseList(argv[++index]);
+    } else if (arg === "--exclude") {
+      parsed.exclude = parseList(argv[++index]);
+    } else if (arg === "--ext-json") {
+      parsed.ext = parseJson(argv[++index], "--ext-json");
+    } else if (arg === "--filter-json") {
+      parsed.filter = parseJson(argv[++index], "--filter-json");
+    } else if (arg === "--conc") {
+      parsed.concurrency = Number(argv[++index] || 0);
+    } else if (arg === "--timeout-ms") {
+      parsed.timeoutMs = Number(argv[++index] || DEFAULT_TIMEOUT_MS);
+    } else if (arg === "--refresh") {
+      parsed.refresh = true;
+    } else if (arg === "--check-links") {
+      parsed.checkLinks = true;
+    } else if (arg === "--view-token") {
+      parsed.viewToken = argv[++index] || "";
+    } else if (arg === "--proxy-url" || arg === "--proxy") {
+      parsed.proxyUrl = argv[++index] || "";
+    } else if (arg.startsWith("--")) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else {
+      positionals.push(arg);
     }
   }
 
+  parsed.title = positionals.join(" ").trim();
   return parsed;
 }
 
 function printUsage() {
-  console.error("Usage: node scripts/search-rrdynb.mjs <title> [--max-candidates 5] [--wait-ms 8000]");
-  console.error("Install dependencies with: npm install && npx playwright install chromium");
+  console.error("Usage: node scripts/search-rrdynb.mjs <title> [options]");
+  console.error("Options:");
+  console.error("  --api-base https://so.252035.xyz/api");
+  console.error("  --max-candidates 20");
+  console.error("  --res all|merge|results");
+  console.error("  --src all|tg|plugin");
+  console.error("  --channels tgsearchers4,Aliyun_4K_Movies");
+  console.error("  --plugins wanou,zhizhen");
+  console.error("  --cloud-types quark,baidu,aliyun,xunlei,magnet,ed2k");
+  console.error("  --include 4K,合集 --exclude 预告");
+  console.error("  --refresh");
+  console.error("  --check-links [--proxy-url socks5://127.0.0.1:1080]");
 }
 
-function loadPlaywright() {
-  const localRequire = createRequire(import.meta.url);
-  try {
-    return localRequire("playwright");
-  } catch (localError) {
-    const moduleDir = process.env.PLAYWRIGHT_NODE_MODULE_DIR;
-    if (moduleDir) {
-      const requireFromModuleDir = createRequire(pathToFileURL(path.join(moduleDir, "noop.js")));
-      try {
-        return requireFromModuleDir("playwright");
-      } catch (envError) {
-        throw new Error(
-          `Playwright not found in PLAYWRIGHT_NODE_MODULE_DIR. Run npm install, or set PLAYWRIGHT_NODE_MODULE_DIR to a node_modules directory containing playwright. Details: ${envError.message}`
-        );
-      }
-    }
-
-    throw new Error(
-      `Playwright is required. Run npm install && npx playwright install chromium. Details: ${localError.message}`
-    );
-  }
-}
-
-function generateSearchQueries(input) {
-  const stripped = stripBookMarks(input).trim();
-  const variants = [
-    stripped,
-    stripped.replace(/[\s·:：,，.。!！?？_\-\/]+/g, ""),
-    stripped.replace(/[与和及&+]/g, ""),
-    stripped.replace(/[\s·:：,，.。!！?？_\-\/与和及&+]+/g, "")
-  ];
-
-  return Array.from(new Set(variants.filter(Boolean)));
-}
-
-function stripBookMarks(value) {
-  return value.replace(/^[《「『“"]+|[》」』”"]+$/g, "");
-}
-
-async function searchOnce(page, query, waitMs, maxCandidates) {
-  const searchUrl = `https://www.rrdynb.com/plus/search.php?keyword=${encodeURIComponent(query)}`;
-  await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(waitMs);
-
-  const bodyText = await page.locator("body").innerText({ timeout: 10000 });
-  const recordCount = extractRecordCount(bodyText);
-  const anchors = await page.locator("a").evaluateAll((nodes) =>
-    nodes
-      .map((node) => ({
-        text: (node.innerText || node.textContent || "").trim(),
-        href: node.href
-      }))
-      .filter((node) => node.text && node.text.includes("《") && /rrdynb\.com\/(movie|dianshiju|dongman|zongyi)\//.test(node.href))
-  );
-
-  const limit = recordCount > 0 ? Math.min(recordCount, maxCandidates) : 0;
-  const unique = dedupeByHref(anchors).slice(0, limit);
-  const candidates = unique.map((item, index) => ({
-    rank: index + 1,
-    name: extractName(item.text),
-    heading: item.text,
-    searchDate: extractYearFromHeading(item.text),
-    internalDetailUrl: item.href
-  }));
-
-  return { query, searchUrl, recordCount, candidates };
-}
-
-async function extractDetail(page, url, waitMs) {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(Math.min(waitMs, 4000));
-
-  const bodyText = await page.locator("body").innerText({ timeout: 10000 });
-  const heading = pick(bodyText, /(《[^\n]+》[^\n]*)/);
-  const detailLinkLocator = (await page.locator(".movie-des a").count()) > 0 ? page.locator(".movie-des a") : page.locator("a");
-  const links = await detailLinkLocator.evaluateAll((nodes) =>
-    nodes.map((node) => {
-      const textFromNode = (target) => (target.innerText || target.textContent || "").trim().replace(/\s+/g, " ");
-      const lineAroundAnchor = (anchor) => {
-        const parent = anchor.parentElement;
-        if (!parent) return textFromNode(anchor);
-
-        const parts = [];
-        for (let current = anchor.previousSibling; current; current = current.previousSibling) {
-          if (current.nodeName === "BR") break;
-          parts.unshift(textFromNode(current));
-        }
-        parts.push(textFromNode(anchor));
-        for (let current = anchor.nextSibling; current; current = current.nextSibling) {
-          if (current.nodeName === "BR") break;
-          parts.push(textFromNode(current));
-        }
-
-        return parts.filter(Boolean).join(" ").trim().replace(/\s+/g, " ");
-      };
-
-      let context = lineAroundAnchor(node) || textFromNode(node);
-      let current = node.parentElement;
-      for (let depth = 0; current && depth < 4 && !/提取|密码|口令|资源/.test(context); depth += 1) {
-        const parentLine = lineAroundAnchor(current) || textFromNode(current);
-        if (parentLine && /资源|提取|密码|口令|网盘|云盘/.test(parentLine)) {
-          context = parentLine;
-          break;
-        }
-        current = current.parentElement;
-      }
-
-      return {
-        text: (node.innerText || node.textContent || "").trim(),
-        href: node.href,
-        context
-      };
-    })
-  );
+async function searchPanSou(args) {
+  const apiBase = normalizeApiBase(args.apiBase);
+  const params = buildSearchQueryParams(args);
+  const searchUrl = `${apiBase}/search?${params.toString()}`;
+  const response = await fetchJson(searchUrl, { timeoutMs: args.timeoutMs });
+  const normalized = normalizePanSouSearchResponse(response, {
+    title: args.title,
+    selectedQuery: args.title,
+    maxCandidates: args.maxCandidates,
+    cloudTypes: args.cloudTypes
+  });
 
   return {
-    name: extractName(heading),
-    heading,
-    director: pick(bodyText, /导演:\s*([^\n]+)/),
-    releaseOrPremiere:
-      pick(bodyText, /(?:首播|上映日期):\s*([^\n]+)/) || extractYearFromHeading(heading) || pick(bodyText, /发布：([^\n]+)/),
-    aliases: pick(bodyText, /又名:\s*([^\n]+)/),
-    resourceProviders: extractProviders(links, bodyText)
+    ...normalized,
+    apiBase,
+    selectedQuery: args.title,
+    searchAttempts: [
+      {
+        query: args.title,
+        searchUrl,
+        availableTotal: normalized.availableTotal,
+        returnedCount: normalized.returnedCount,
+        candidateCount: normalized.candidates.length
+      }
+    ],
+    output: {
+      directResourceLinks: "included_when_detected",
+      extractionCodes: "included_when_detected",
+      linkChecks: args.checkLinks ? "included_when_requested" : "not_requested"
+    }
   };
 }
 
-function extractProviders(links, bodyText) {
-  const providers = new Map();
-  for (const provider of PROVIDERS) {
-    const matchingLinks = dedupeByHref(
-      links
-        .map(normalizeLink)
-        .filter((link) => isDirectProviderLink(provider, link))
-    );
-    const mentionedInText = provider.patterns.some((pattern) => pattern.test(bodyText));
-    if (matchingLinks.length > 0 || mentionedInText) {
-      const extractionCodes = dedupeStrings([
-        ...matchingLinks.map((link) => buildResourceLink(provider.name, link)).flatMap((link) => link.extractionCodes),
-        ...extractProviderCodesFromText(provider, bodyText)
-      ]);
-      const resourceLinks = matchingLinks.map((link) =>
-        attachProviderCodesIfNeeded(buildResourceLink(provider.name, link), matchingLinks.length, extractionCodes)
-      );
+function buildSearchQueryParams(args) {
+  const params = new URLSearchParams();
+  params.set("kw", args.title);
+  if (args.channels && args.channels.length > 0) params.set("channels", args.channels.join(","));
+  if (args.plugins && args.plugins.length > 0) params.set("plugins", args.plugins.join(","));
+  if (args.concurrency) params.set("conc", String(args.concurrency));
+  if (args.refresh) params.set("refresh", "true");
+  if (args.resultType) params.set("res", args.resultType);
+  if (args.sourceType) params.set("src", args.sourceType);
+  if (args.cloudTypes && args.cloudTypes.length > 0) params.set("cloud_types", args.cloudTypes.join(","));
+  if (args.ext) params.set("ext", JSON.stringify(args.ext));
 
-      providers.set(provider.name, {
-        provider: provider.name,
+  const filter = args.filter || buildFilter(args.include, args.exclude);
+  if (filter) params.set("filter", JSON.stringify(filter));
+
+  return params;
+}
+
+function normalizePanSouSearchResponse(response, options = {}) {
+  const data = unwrapData(response);
+  const rankedLinks = data.results && data.results.length > 0 ? flattenResultsLinks(data.results) : [];
+  const mergedByType = data.merged_by_type || groupResultsByType(data.results || []);
+  const rawLinks = rankedLinks.length > 0 ? rankedLinks : flattenMergedLinks(mergedByType);
+  const allLinks = filterLinksByCloudTypes(rawLinks, options.cloudTypes);
+  const limit = Number.isFinite(options.maxCandidates) ? options.maxCandidates : DEFAULT_MAX_CANDIDATES;
+  const downloadLinks = allLinks.slice(0, limit).map((link, index) => normalizeDownloadLink(link, index + 1));
+  const candidates = downloadLinks.map((link) => ({
+    rank: link.rank,
+    name: link.note || link.label || options.title || "未命名资源",
+    provider: link.provider,
+    diskType: link.diskType,
+    datetime: link.datetime,
+    source: link.source,
+    matchReason: link.note ? "PanSou 结果说明包含资源标题" : "PanSou 搜索结果",
+    resourceProviders: [
+      {
+        provider: link.provider,
+        diskType: link.diskType,
         available: true,
-        links: resourceLinks,
-        extractionCodes,
-        linkHidden: false,
-        hasExtractionCode: extractionCodes.length > 0,
-        note: matchingLinks.length > 0 ? "检测到可点击入口，已输出具体链接" : "页面文字提及，未检测到可点击入口"
+        links: [
+          {
+            label: link.label,
+            url: link.url,
+            extractionCode: link.extractionCode,
+            extractionCodes: link.extractionCodes
+          }
+        ],
+        extractionCodes: link.extractionCodes,
+        note: link.source || "PanSou API"
+      }
+    ],
+    downloadLinks: [stripRank(link)]
+  }));
+
+  return {
+    ok: true,
+    inputTitle: options.title || "",
+    selectedQuery: options.selectedQuery || options.title || "",
+    availableTotal: Number(data.total || allLinks.length || 0),
+    returnedCount: downloadLinks.length,
+    total: downloadLinks.length,
+    providerCounts: countBy(downloadLinks, "diskType"),
+    candidates,
+    downloadLinks: downloadLinks.map(stripRank)
+  };
+}
+
+function normalizeCheckLinksResponse(response) {
+  const data = unwrapData(response);
+  return {
+    ok: true,
+    results: (data.results || []).map((item) => ({
+      provider: providerLabel(item.disk_type),
+      diskType: item.disk_type,
+      url: item.url,
+      normalizedUrl: item.normalized_url || "",
+      state: item.state,
+      cacheHit: Boolean(item.cache_hit),
+      checkedAt: item.checked_at || null,
+      expiresAt: item.expires_at || null,
+      summary: item.summary || ""
+    }))
+  };
+}
+
+function filterLinksByCloudTypes(links, cloudTypes = []) {
+  if (!cloudTypes || cloudTypes.length === 0) return links;
+  const allowed = new Set(cloudTypes);
+  return links.filter((link) => allowed.has(link.diskType));
+}
+
+async function checkSearchResultLinks(args, downloadLinks) {
+  const items = downloadLinks
+    .filter((link) => CHECKABLE_TYPES.has(link.diskType))
+    .map((link) => ({
+      disk_type: link.diskType,
+      url: link.url,
+      ...(link.extractionCode ? { password: link.extractionCode } : {})
+    }));
+
+  if (items.length === 0) {
+    return { ok: true, results: [], skipped: "no_checkable_links" };
+  }
+
+  const apiBase = normalizeApiBase(args.apiBase);
+  const body = {
+    items,
+    ...(args.viewToken ? { view_token: args.viewToken } : {}),
+    ...(args.proxyUrl ? { proxy_url: args.proxyUrl } : {})
+  };
+  const checkUrl = `${apiBase}/check/links`;
+  try {
+    const response = await fetchJson(checkUrl, {
+      method: "POST",
+      timeoutMs: args.timeoutMs,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    return normalizeCheckLinksResponse(response);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error && error.message ? error.message : String(error),
+      checkUrl,
+      checkedItemCount: items.length
+    };
+  }
+}
+
+async function fetchJson(url, options = {}) {
+  const retries = Number.isFinite(options.retries) ? options.retries : 2;
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await fetchJsonOnce(url, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries) break;
+      await delay(500 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
+async function fetchJsonOnce(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: options.method || "GET",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      body: options.body,
+      signal: controller.signal
+    });
+    const text = await response.text();
+    let json;
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Expected JSON from ${url}, got: ${text.slice(0, 200)}`);
+    }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} from ${url}: ${JSON.stringify(json).slice(0, 300)}`);
+    }
+    if (json && typeof json === "object" && "code" in json && json.code !== 0) {
+      throw new Error(`PanSou API error: ${json.message || json.error || json.code}`);
+    }
+    return json;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function unwrapData(response) {
+  if (response && typeof response === "object" && response.data && typeof response.data === "object") {
+    return response.data;
+  }
+  return response || {};
+}
+
+function flattenMergedLinks(mergedByType) {
+  const flattened = [];
+  for (const [diskType, links] of Object.entries(mergedByType || {})) {
+    for (const link of links || []) {
+      flattened.push({ diskType, ...link });
+    }
+  }
+  return flattened;
+}
+
+function flattenResultsLinks(results) {
+  const flattened = [];
+  for (const result of results || []) {
+    for (const link of result.links || []) {
+      flattened.push({
+        diskType: link.type || "others",
+        url: link.url,
+        password: link.password,
+        note: link.work_title || result.title,
+        datetime: link.datetime || result.datetime,
+        source: result.channel ? `tg:${result.channel}` : "unknown",
+        images: result.images || []
       });
     }
   }
-
-  return Array.from(providers.values());
+  return flattened;
 }
 
-function attachProviderCodesIfNeeded(link, providerLinkCount, providerExtractionCodes) {
-  if (link.extractionCodes.length > 0 || providerLinkCount !== 1 || providerExtractionCodes.length === 0) {
-    return link;
-  }
-
-  return {
-    ...link,
-    extractionCode: providerExtractionCodes[0],
-    extractionCodes: providerExtractionCodes
-  };
-}
-
-function isDirectProviderLink(provider, link) {
-  const hrefMatches = provider.patterns.some((pattern) => pattern.test(link.href));
-  if (!hrefMatches) return false;
-  if (/^(magnet|ed2k):/i.test(link.href)) return true;
-  return hasResourceContext(link) || isProviderLabel(provider.name, link.text);
-}
-
-function hasResourceContext(link) {
-  return /资源|提取码|提取密码|访问码|访问密码|密码|口令/.test(link.context);
-}
-
-function isProviderLabel(providerName, text) {
-  const aliases = {
-    阿里网盘: ["阿里网盘", "阿里云盘"],
-    夸克网盘: ["夸克网盘", "夸克下载"],
-    百度网盘: ["百度网盘", "百度云盘"],
-    迅雷云盘: ["迅雷云盘", "迅雷网盘"],
-    ED2K: ["ED2K", "电驴"],
-    磁力链接: ["磁力链接", "磁力"]
-  };
-  return (aliases[providerName] || [providerName]).some((alias) => text === alias);
-}
-
-function flattenDownloadLinks(resourceProviders) {
-  return resourceProviders.flatMap((provider) =>
-    provider.links.map((link) => ({
-      provider: provider.provider,
-      label: link.label,
-      url: link.url,
-      extractionCode: link.extractionCode,
-      extractionCodes: link.extractionCodes
-    }))
-  );
-}
-
-function buildResourceLink(providerName, link) {
-  const url = decodeHtmlEntities(link.href);
-  const context = [url, link.text, link.context].filter(Boolean).join("\n");
-  const extractionCodes = dedupeStrings([...extractCodesFromUrl(url), ...extractCodesFromText(context)]);
-
-  return {
-    label: link.text || providerName,
-    url,
-    extractionCode: extractionCodes[0] || null,
-    extractionCodes
-  };
-}
-
-function normalizeLink(link) {
-  return {
-    text: normalizeWhitespace(link.text || ""),
-    href: decodeHtmlEntities(link.href || ""),
-    context: normalizeWhitespace(link.context || "")
-  };
-}
-
-function extractProviderCodesFromText(provider, bodyText) {
-  const lines = bodyText.split("\n").map((line) => normalizeWhitespace(line));
-  const codes = [];
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const isProviderLine = provider.patterns.some((pattern) => pattern.test(line));
-    if (!isProviderLine) continue;
-
-    codes.push(...extractCodesFromText(line));
-    const nextLine = lines[index + 1] || "";
-    if (/提取码|提取密码|访问码|访问密码|密码|口令/i.test(line)) {
-      codes.push(...extractCodesFromText(nextLine));
+function groupResultsByType(results) {
+  const grouped = {};
+  for (const result of results || []) {
+    for (const link of result.links || []) {
+      const diskType = link.type || "others";
+      if (!grouped[diskType]) grouped[diskType] = [];
+      grouped[diskType].push({
+        url: link.url,
+        password: link.password,
+        note: link.work_title || result.title,
+        datetime: link.datetime || result.datetime,
+        source: result.channel ? `tg:${result.channel}` : "unknown",
+        images: result.images || []
+      });
     }
   }
-
-  return dedupeStrings(codes);
+  return grouped;
 }
 
-function extractCodesFromUrl(url) {
+function normalizeDownloadLink(link, rank) {
+  const extractionCode = link.password || extractCodeFromUrl(link.url) || null;
+  const provider = providerLabel(link.diskType);
+  const label = link.note || provider;
+  return {
+    rank,
+    provider,
+    diskType: link.diskType,
+    label,
+    note: link.note || "",
+    url: link.url,
+    extractionCode,
+    extractionCodes: extractionCode ? [extractionCode] : [],
+    datetime: link.datetime || "",
+    source: link.source || "",
+    images: link.images || []
+  };
+}
+
+function stripRank(link) {
+  const { rank, ...rest } = link;
+  return rest;
+}
+
+function providerLabel(diskType) {
+  return PROVIDER_LABELS[diskType] || diskType || "未知来源";
+}
+
+function extractCodeFromUrl(url) {
   try {
     const parsed = new URL(url);
     return ["pwd", "password", "passcode", "extract_code", "extraction_code"]
       .map((name) => parsed.searchParams.get(name))
-      .filter(Boolean);
+      .find(Boolean) || null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-function extractCodesFromText(text) {
-  const codes = [];
-  const regex = /(?:提取码|提取密码|访问码|访问密码|密码|口令)\s*[:：]?\s*([A-Za-z0-9]{1,20})/gi;
-  let match = regex.exec(text);
-  while (match) {
-    codes.push(match[1]);
-    match = regex.exec(text);
+function buildFilter(include, exclude) {
+  const filter = {};
+  if (include && include.length > 0) filter.include = include;
+  if (exclude && exclude.length > 0) filter.exclude = exclude;
+  return Object.keys(filter).length > 0 ? filter : null;
+}
+
+function countBy(items, key) {
+  const counts = {};
+  for (const item of items) {
+    const value = item[key] || "unknown";
+    counts[value] = (counts[value] || 0) + 1;
   }
-  return codes;
+  return counts;
 }
 
-function normalizeWhitespace(value) {
-  return value.trim().replace(/\s+/g, " ");
+function normalizeApiBase(value) {
+  const trimmed = (value || DEFAULT_API_BASE).replace(/\/+$/g, "");
+  if (trimmed.endsWith("/api")) return trimmed;
+  return `${trimmed}/api`;
 }
 
-function decodeHtmlEntities(value) {
+function parseList(value = "") {
   return value
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
-function dedupeStrings(items) {
-  const seen = new Set();
-  const result = [];
-  for (const item of items) {
-    if (!item || seen.has(item)) continue;
-    seen.add(item);
-    result.push(item);
+function parseJson(value, label) {
+  try {
+    return JSON.parse(value || "{}");
+  } catch (error) {
+    throw new Error(`${label} must be valid JSON: ${error.message}`);
   }
-  return result;
-}
-
-function buildMatchReason(inputTitle, detail, candidate) {
-  const aliases = detail.aliases || "";
-  const name = detail.name || candidate.name || "";
-  if (normalizeTitle(name) === normalizeTitle(inputTitle)) {
-    return "名称直接匹配";
-  }
-  if (aliases && normalizeTitle(aliases).includes(normalizeTitle(inputTitle))) {
-    return "别名包含用户输入标题";
-  }
-  if (normalizeTitle(name).includes(normalizeTitle(inputTitle)) || normalizeTitle(inputTitle).includes(normalizeTitle(name))) {
-    return "名称高度相似";
-  }
-  return "搜索结果相关";
-}
-
-function normalizeTitle(value) {
-  return stripBookMarks(value).replace(/[\s·:：,，.。!！?？_\-\/与和及&+]+/g, "").toLowerCase();
-}
-
-function extractRecordCount(bodyText) {
-  const match = bodyText.match(/共\d+页\/(\d+)条记录/);
-  return match ? Number(match[1]) : 0;
-}
-
-function extractName(text) {
-  return pick(text || "", /《([^》]+)》/);
-}
-
-function extractYearFromHeading(text) {
-  return pick(text || "", /[（(]([12]\\d{3})[）)]/);
-}
-
-function pick(text, regex) {
-  const match = (text || "").match(regex);
-  return match ? match[1].trim().replace(/\s+/g, " ") : "";
-}
-
-function dedupeByHref(items) {
-  const seen = new Set();
-  const result = [];
-  for (const item of items) {
-    if (seen.has(item.href)) continue;
-    seen.add(item.href);
-    result.push(item);
-  }
-  return result;
 }
 
 function isCliEntryPoint() {
   return Boolean(process.argv[1]) && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 }
 
-export { extractProviders, flattenDownloadLinks };
+export {
+  buildSearchQueryParams,
+  normalizeCheckLinksResponse,
+  normalizePanSouSearchResponse
+};
