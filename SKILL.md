@@ -27,7 +27,7 @@ For ordinary user searches, use:
 node scripts/search-rrdynb.mjs "蜘蛛侠"
 ```
 
-Default behavior: return only the top 20 PanSou-ranked results. Do not show hundreds of raw upstream matches to the user unless they explicitly ask for a larger export.
+Default behavior: return a Markdown table with only the top 20 PanSou-ranked results. Do not show hundreds of raw upstream matches to the user unless they explicitly ask for a larger export. For programmatic JSON output, use `--format json` or `--json`.
 
 The helper calls `GET /api/search` with these parameters:
 
@@ -66,6 +66,7 @@ node scripts/search-rrdynb.mjs "蜘蛛侠" \
 - `--ext-json '{"title_en":"Spider-Man"}'`
 - `--filter-json '{"include":["4K"],"exclude":["预告"]}'`
 - `--api-base https://so.252035.xyz/api`
+- `--format markdown|json`
 
 ## Search Response
 
@@ -99,6 +100,24 @@ The helper normalizes this into:
 - `availableTotal`: upstream total count, for reference only.
 - `returnedCount` / `total`: number of results actually returned to the user, capped by `--max-candidates` and defaulting to 20.
 - `providerCounts`: counts by disk type among returned results only.
+
+## User-Facing Table
+
+When answering a search request, output a Markdown table sorted by PanSou relevance. Include clickable links directly in the table so the user can open and download without digging through JSON.
+
+Use these columns:
+
+| # | 资源 | 网盘 | 链接 | 提取码 | 来源 | 时间 |
+|---:|---|---|---|---|---|---|
+| 1 | 示例资源 | 夸克网盘 | [打开](https://pan.quark.cn/s/example) | - | plugin:example | 2026-01-01 |
+
+Rules:
+
+- The table is the primary answer. Do not provide only a summary when links are available.
+- Use `[打开](url)` for the link cell.
+- Use `-` when extraction code, source, or datetime is absent.
+- Keep the table to the returned top 20 by default.
+- Put a short line above the table: `按 PanSou 相关度排序，返回前 N 条。上游可用结果约 M 条。`
 
 ## Link Check Parameters
 

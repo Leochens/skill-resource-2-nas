@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import {
   buildSearchQueryParams,
   normalizeCheckLinksResponse,
-  normalizePanSouSearchResponse
+  normalizePanSouSearchResponse,
+  renderMarkdownTable
 } from "../scripts/search-rrdynb.mjs";
 
 test("buildSearchQueryParams serializes PanSou GET parameters", () => {
@@ -198,4 +199,54 @@ test("normalizeCheckLinksResponse unwraps link check state", () => {
       }
     ]
   });
+});
+
+test("renderMarkdownTable outputs ranked clickable resource rows", () => {
+  const markdown = renderMarkdownTable({
+    inputTitle: "蜘蛛侠",
+    availableTotal: 30,
+    returnedCount: 2,
+    candidates: [
+      {
+        rank: 1,
+        name: "蜘蛛侠：纵横宇宙",
+        provider: "夸克网盘",
+        diskType: "quark",
+        datetime: "2026-01-01T00:00:00Z",
+        source: "plugin:wanou",
+        downloadLinks: [
+          {
+            provider: "夸克网盘",
+            diskType: "quark",
+            url: "https://pan.quark.cn/s/quark-id",
+            extractionCode: null,
+            source: "plugin:wanou",
+            datetime: "2026-01-01T00:00:00Z"
+          }
+        ]
+      },
+      {
+        rank: 2,
+        name: "蜘蛛侠合集",
+        provider: "百度网盘",
+        diskType: "baidu",
+        datetime: "2025-01-01T00:00:00Z",
+        source: "tg:movies",
+        downloadLinks: [
+          {
+            provider: "百度网盘",
+            diskType: "baidu",
+            url: "https://pan.baidu.com/s/baidu-id?pwd=8888",
+            extractionCode: "8888",
+            source: "tg:movies",
+            datetime: "2025-01-01T00:00:00Z"
+          }
+        ]
+      }
+    ]
+  });
+
+  assert.match(markdown, /按 PanSou 相关度排序/);
+  assert.match(markdown, /\| 1 \| 蜘蛛侠：纵横宇宙 \| 夸克网盘 \| \[打开\]\(https:\/\/pan\.quark\.cn\/s\/quark-id\) \| - \| plugin:wanou \| 2026-01-01 \|/);
+  assert.match(markdown, /\| 2 \| 蜘蛛侠合集 \| 百度网盘 \| \[打开\]\(https:\/\/pan\.baidu\.com\/s\/baidu-id\?pwd=8888\) \| 8888 \| tg:movies \| 2025-01-01 \|/);
 });

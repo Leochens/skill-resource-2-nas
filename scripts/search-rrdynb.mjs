@@ -48,7 +48,7 @@ async function main() {
     searchResult.linkChecks = await checkSearchResultLinks(args, searchResult.downloadLinks);
   }
 
-  console.log(JSON.stringify(searchResult, null, 2));
+  console.log(formatSearchResult(searchResult, args.format));
 }
 
 function parseArgs(argv) {
@@ -70,7 +70,8 @@ function parseArgs(argv) {
     refresh: false,
     checkLinks: false,
     viewToken: "",
-    proxyUrl: ""
+    proxyUrl: "",
+    format: "markdown"
   };
   const positionals = [];
 
@@ -110,6 +111,12 @@ function parseArgs(argv) {
       parsed.viewToken = argv[++index] || "";
     } else if (arg === "--proxy-url" || arg === "--proxy") {
       parsed.proxyUrl = argv[++index] || "";
+    } else if (arg === "--format") {
+      parsed.format = argv[++index] || "markdown";
+    } else if (arg === "--json") {
+      parsed.format = "json";
+    } else if (arg === "--markdown") {
+      parsed.format = "markdown";
     } else if (arg.startsWith("--")) {
       throw new Error(`Unknown option: ${arg}`);
     } else {
@@ -134,6 +141,13 @@ function printUsage() {
   console.error("  --include 4K,合集 --exclude 预告");
   console.error("  --refresh");
   console.error("  --check-links [--proxy-url socks5://127.0.0.1:1080]");
+  console.error("  --format markdown|json");
+}
+
+function formatSearchResult(searchResult, format = "markdown") {
+  if (format === "json") return JSON.stringify(searchResult, null, 2);
+  if (format === "markdown") return renderMarkdownTable(searchResult);
+  throw new Error(`Unsupported format: ${format}`);
 }
 
 async function searchPanSou(args) {
@@ -252,6 +266,68 @@ function normalizeCheckLinksResponse(response) {
       summary: item.summary || ""
     }))
   };
+}
+
+function renderMarkdownTable(searchResult) {
+  const title = searchResult.inputTitle || searchResult.selectedQuery || "搜索结果";
+  const availableTotal = Number(searchResult.availableTotal || 0);
+  const returnedCount = Number(searchResult.returnedCount || searchResult.candidates?.length || 0);
+  const lines = [
+    `### ${escapeMarkdownText(title)} 搜索结果`,
+    "",
+    `按 PanSou 相关度排序，返回前 ${returnedCount} 条。上游可用结果约 ${availableTotal} 条。`,
+    "",
+    "| # | 资源 | 网盘 | 链接 | 提取码 | 来源 | 时间 |",
+    "|---:|---|---|---|---|---|---|"
+  ];
+
+  for (const candidate of searchResult.candidates || []) {
+    const link = candidate.downloadLinks?.[0] || {};
+    lines.push(
+      [
+        candidate.rank,
+        escapeMarkdownCell(candidate.name || link.note || link.label || "未命名资源"),
+        escapeMarkdownCell(candidate.provider || link.provider || providerLabel(link.diskType)),
+        link.url ? `[打开](${escapeMarkdownUrl(link.url)})` : "-",
+        escapeMarkdownCell(link.extractionCode || "-"),
+        escapeMarkdownCell(candidate.source || link.source || "-"),
+        escapeMarkdownCell(formatDate(candidate.datetime || link.datetime))
+      ].join(" | ").replace(/^/, "| ").replace(/$/, " |")
+    );
+  }
+
+  if (searchResult.linkChecks) {
+    lines.push("", renderLinkCheckNote(searchResult.linkChecks));
+  }
+
+  return lines.join("\n");
+}
+
+function renderLinkCheckNote(linkChecks) {
+  if (linkChecks.ok) {
+    const checked = linkChecks.results?.length || 0;
+    return `链接检测：已检测 ${checked} 条。`;
+  }
+  return `链接检测：当前不可用（${escapeMarkdownText(linkChecks.error || "检测失败")}）。`;
+}
+
+function formatDate(value) {
+  if (!value || value === "0001-01-01T00:00:00Z") return "-";
+  return String(value).slice(0, 10);
+}
+
+function escapeMarkdownCell(value) {
+  return escapeMarkdownText(value).replace(/\|/g, "\\|");
+}
+
+function escapeMarkdownText(value) {
+  return String(value ?? "")
+    .replace(/\r?\n+/g, " ")
+    .trim();
+}
+
+function escapeMarkdownUrl(value) {
+  return String(value ?? "").replace(/\)/g, "%29");
 }
 
 function filterLinksByCloudTypes(links, cloudTypes = []) {
@@ -486,6 +562,8 @@ function isCliEntryPoint() {
 
 export {
   buildSearchQueryParams,
+  formatSearchResult,
   normalizeCheckLinksResponse,
-  normalizePanSouSearchResponse
+  normalizePanSouSearchResponse,
+  renderMarkdownTable
 };
