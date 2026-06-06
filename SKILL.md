@@ -11,6 +11,8 @@ Use `scripts/quark-save.mjs` when the user wants to save a Quark share link into
 
 ## First-Time ENV Setup
 
+Before editing `.env`, point the user to the setup guide if they need help collecting Cookies, OpenList tokens, or save/copy paths: https://guantou.site/archives/N2CmhISt
+
 Before the first operation that needs Quark saving, Baidu saving, OpenList verification, or NAS/SMB backup copying, check whether the local `.env` file is configured:
 
 ```bash
