@@ -37,8 +37,8 @@ async function main() {
     process.exit(2);
   }
 
-  if (!isCloudDrivePath(args.savePath)) {
-    throw new Error(`百度保存目录必须是网盘内路径，例如 /我的资源/影视：${args.savePath}`);
+  if (!isCloudDrivePath(parseBaiduSavePath(args.savePath))) {
+    throw new Error(`百度保存目录必须是网盘内路径或百度目录 URL，例如 /我的资源/影视：${args.savePath}`);
   }
 
   const cookie = resolveCookie(args);
@@ -152,10 +152,11 @@ function parseArgs(argv) {
 function applyEnvDefaults(args, injectedEnv = null) {
   const fileEnv = injectedEnv || loadEnvFile(args.envFile);
   const env = { ...fileEnv, ...process.env };
+  const rawSavePath = args.savePath || env.BAIDU_DEFAULT_SAVE_PATH || "";
   return {
     ...args,
     env,
-    savePath: args.savePath || env.BAIDU_DEFAULT_SAVE_PATH || ""
+    savePath: rawSavePath ? parseBaiduSavePath(rawSavePath) : ""
   };
 }
 
@@ -542,7 +543,7 @@ function buildBaiduTransferRequest({
 
   const body = new URLSearchParams();
   body.set("fsidlist", JSON.stringify(selectedItems.map((item) => item.fsId)));
-  body.set("path", savePath || "/");
+  body.set("path", parseBaiduSavePath(savePath || "/"));
   return { url, body };
 }
 
@@ -983,6 +984,29 @@ function isCloudDrivePath(value) {
   return String(value || "").startsWith("/") && !String(value).includes("..");
 }
 
+function parseBaiduSavePath(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (isCloudDrivePath(text)) return text;
+
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new Error(`百度保存目录必须是网盘内路径或百度目录 URL：${value}`);
+  }
+  if (!parsed.hostname.endsWith("pan.baidu.com")) {
+    throw new Error(`百度保存目录 URL 必须来自 pan.baidu.com：${value}`);
+  }
+
+  const hashQuery = parsed.hash.includes("?") ? parsed.hash.slice(parsed.hash.indexOf("?") + 1) : "";
+  const pathValue = new URLSearchParams(hashQuery).get("path") || parsed.searchParams.get("path") || "";
+  if (!isCloudDrivePath(pathValue)) {
+    throw new Error(`百度目录 URL 必须包含有效 path 参数：${value}`);
+  }
+  return pathValue;
+}
+
 function suggestSavedName({ baseName, item, selectedCount, isSeries }) {
   const extension = item.isDir ? "" : getExtension(item.name);
   if (item.isDir) {
@@ -1092,6 +1116,7 @@ export {
   buildBaiduTransferRequest,
   extractBaiduShareContextFromHtml,
   normalizeBaiduShareItems,
+  parseBaiduSavePath,
   parseBaiduShareUrl,
   renderBaiduShareItemsTable
 };

@@ -28,7 +28,7 @@ Required `.env` values:
 | `OPENLIST_TOKEN` | yes | Fixed OpenList API token used for `fs/list`, `fs/get`, `fs/copy`, and task APIs. |
 | `OPENLIST_BASE_URL` | yes | OpenList service base URL, e.g. `http://192.168.5.22:5244`. |
 | `QUARK_DEFAULT_SAVE_URL` | yes | Default Quark cloud folder URL where share resources should be saved. |
-| `BAIDU_DEFAULT_SAVE_PATH` | yes | Default Baidu Netdisk folder path where share resources should be saved, e.g. `/我的资源/影视`. |
+| `BAIDU_DEFAULT_SAVE_PATH` | yes | Default Baidu Netdisk folder path or folder URL where share resources should be saved, e.g. `/我的资源/影视` or `https://pan.baidu.com/disk/main#/index?...&path=%2FNAS资源下载`. |
 | `OPENLIST_DEFAULT_COPY_DST_PATH` | yes | Default OpenList path backed by SMB/NAS storage for backup copies. |
 
 Security rules:
@@ -37,7 +37,7 @@ Security rules:
 - Print only masked secret values. `scripts/check-env.mjs` masks `QUARK_COOKIE`, `BAIDU_COOKIE`, and `OPENLIST_TOKEN`.
 - If any value is missing or invalid, stop before saving/copying and explain the specific missing key.
 - `QUARK_DEFAULT_SAVE_URL` must be a full Quark folder URL such as `https://pan.quark.cn/list#/list/all/<fid>-<folder-name>`.
-- `BAIDU_DEFAULT_SAVE_PATH` must be a Baidu cloud-drive path such as `/我的资源/影视`, not a local filesystem path.
+- `BAIDU_DEFAULT_SAVE_PATH` must be a Baidu cloud-drive path such as `/我的资源/影视`, or a Baidu folder URL copied from the address bar such as `https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD`. It is not a local filesystem path.
 - `OPENLIST_DEFAULT_COPY_DST_PATH` must be an OpenList path such as `/影视资源备份/影视`, not an OS path such as `/mnt/nas/movies`.
 
 Use these values as defaults:
@@ -263,7 +263,7 @@ node scripts/baidu-save.mjs \
   --dry-run
 ```
 
-If the user omits the destination path, use `BAIDU_DEFAULT_SAVE_PATH` from `.env`. Links in `/share/init?surl=...&pwd=...` form are also supported. If the extraction code is not in the URL, pass it with `--passcode`:
+If the user omits the destination path, use `BAIDU_DEFAULT_SAVE_PATH` from `.env`. This value may be either a direct Baidu path like `/NAS资源下载` or a Baidu folder URL like `https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD`; the helper decodes the URL to `/NAS资源下载` before calling `share/transfer`. Links in `/share/init?surl=...&pwd=...` form are also supported. If the extraction code is not in the URL, pass it with `--passcode`:
 
 ```bash
 node scripts/baidu-save.mjs "$SHARE_URL" "$BAIDU_DEFAULT_SAVE_PATH" \
@@ -318,6 +318,7 @@ Useful options:
 - `--passcode 8888`: provide a Baidu extraction code if the URL does not include `pwd`.
 - `--resource-type auto|series|movie|collection`: pass the Agent's resource classification.
 - `--rename-plan-json '[{"rank":1,"name":"...","reason":"..."}]'`: pass Agent-decided final names. `rank` refers to the row number in the preview table.
+- `--save-path` / positional destination accepts either `/百度目录` or a Baidu folder URL containing a `path` parameter.
 
 Baidu API flow used by the helper:
 

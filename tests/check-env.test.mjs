@@ -62,6 +62,25 @@ test("validateSkillEnv accepts complete configuration and masks secrets", () => 
   assert.doesNotMatch(result.values.BAIDU_COOKIE.displayValue, /secret-token/);
 });
 
+test("validateSkillEnv accepts Baidu folder URL as default save target", () => {
+  const result = validateSkillEnv({
+    QUARK_COOKIE: "cookie",
+    BAIDU_COOKIE: "BDUSS=abc; STOKEN=def",
+    OPENLIST_TOKEN: "token",
+    OPENLIST_BASE_URL: "http://192.168.5.22:5244/",
+    QUARK_DEFAULT_SAVE_URL: "https://pan.quark.cn/list#/list/all/fid-%E5%A4%87%E4%BB%BD",
+    BAIDU_DEFAULT_SAVE_PATH:
+      "https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD",
+    OPENLIST_DEFAULT_COPY_DST_PATH: "/影视资源备份/影视"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.values.BAIDU_DEFAULT_SAVE_PATH.displayValue,
+    "https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD"
+  );
+});
+
 test("validateSkillEnv validates URL and OpenList path shapes", () => {
   const result = validateSkillEnv({
     QUARK_COOKIE: "cookie",

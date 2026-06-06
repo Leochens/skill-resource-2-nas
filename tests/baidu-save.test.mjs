@@ -6,6 +6,7 @@ import {
   buildBaiduTransferRequest,
   extractBaiduShareContextFromHtml,
   normalizeBaiduShareItems,
+  parseBaiduSavePath,
   parseBaiduShareUrl,
   renderBaiduShareItemsTable
 } from "../scripts/baidu-save.mjs";
@@ -41,6 +42,33 @@ test("applyEnvDefaults uses configured Baidu cookie and default save path", () =
 
   assert.equal(args.savePath, "/我的资源/影视");
   assert.equal(args.env.BAIDU_COOKIE, "BDUSS=abc; STOKEN=def");
+});
+
+test("parseBaiduSavePath decodes Baidu folder URLs and keeps direct paths", () => {
+  assert.equal(parseBaiduSavePath("/NAS资源下载"), "/NAS资源下载");
+  assert.equal(
+    parseBaiduSavePath(
+      "https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD"
+    ),
+    "/NAS资源下载"
+  );
+});
+
+test("applyEnvDefaults normalizes Baidu default save URL into cloud-drive path", () => {
+  const args = applyEnvDefaults(
+    {
+      shareUrl: "https://pan.baidu.com/s/1abcDEF?pwd=8888",
+      savePath: "",
+      cookieEnv: "BAIDU_COOKIE"
+    },
+    {
+      BAIDU_COOKIE: "BDUSS=abc; STOKEN=def",
+      BAIDU_DEFAULT_SAVE_PATH:
+        "https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD"
+    }
+  );
+
+  assert.equal(args.savePath, "/NAS资源下载");
 });
 
 test("extractBaiduShareContextFromHtml reads transfer tokens and share files", () => {
@@ -139,6 +167,18 @@ test("buildBaiduTransferRequest creates a share transfer request", () => {
   assert.equal(request.url.searchParams.get("ondup"), "newcopy");
   assert.equal(request.body.get("fsidlist"), "[111,222]");
   assert.equal(request.body.get("path"), "/我的资源/影视");
+});
+
+test("buildBaiduTransferRequest normalizes Baidu folder URL save path", () => {
+  const request = buildBaiduTransferRequest({
+    bdstoken: "bd-token",
+    shareId: "12345",
+    shareUk: "67890",
+    savePath: "https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD",
+    selectedItems: [{ fsId: 111 }]
+  });
+
+  assert.equal(request.body.get("path"), "/NAS资源下载");
 });
 
 test("renderBaiduShareItemsTable outputs a confirmation table", () => {

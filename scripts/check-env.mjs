@@ -43,8 +43,8 @@ const REQUIRED_CONFIG = [
     key: "BAIDU_DEFAULT_SAVE_PATH",
     label: "默认百度保存目录",
     secret: false,
-    hint: "百度网盘目标目录路径，例如 /我的资源/影视。必须是百度网盘内路径，不是本机路径。",
-    validate: (value) => isCloudDrivePath(value)
+    hint: "百度网盘目标目录路径或目录 URL，例如 /我的资源/影视，或 https://pan.baidu.com/disk/main#/index?...&path=%2F我的资源%2F影视。",
+    validate: (value) => isBaiduSaveTarget(value)
   },
   {
     key: "OPENLIST_DEFAULT_COPY_DST_PATH",
@@ -245,6 +245,20 @@ function isOpenListPath(value) {
 
 function isCloudDrivePath(value) {
   return String(value || "").startsWith("/") && !String(value).includes("..");
+}
+
+function isBaiduSaveTarget(value) {
+  const text = String(value || "").trim();
+  if (isCloudDrivePath(text)) return true;
+  try {
+    const parsed = new URL(text);
+    if (!parsed.hostname.endsWith("pan.baidu.com")) return false;
+    const hashQuery = parsed.hash.includes("?") ? parsed.hash.slice(parsed.hash.indexOf("?") + 1) : "";
+    const pathValue = new URLSearchParams(hashQuery).get("path") || parsed.searchParams.get("path") || "";
+    return isCloudDrivePath(pathValue);
+  } catch {
+    return false;
+  }
 }
 
 function isCliEntryPoint() {
