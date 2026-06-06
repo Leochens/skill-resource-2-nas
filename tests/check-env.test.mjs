@@ -28,47 +28,90 @@ OPENLIST_DEFAULT_COPY_DST_PATH=/影视资源备份/影视
 
 test("validateSkillEnv reports missing required first-use configuration", () => {
   const result = validateSkillEnv({
-    QUARK_COOKIE: "cookie",
+    QUARK_COOKIE: "",
     OPENLIST_TOKEN: "",
-    QUARK_DEFAULT_SAVE_URL: "https://pan.quark.cn/list#/list/all/fid-%E5%A4%87%E4%BB%BD",
+    QUARK_DEFAULT_SAVE_URL: "",
     OPENLIST_DEFAULT_COPY_DST_PATH: ""
   });
 
   assert.equal(result.ok, false);
   assert.deepEqual(
     result.missing.map((item) => item.key),
-    ["BAIDU_COOKIE", "OPENLIST_TOKEN", "OPENLIST_BASE_URL", "BAIDU_DEFAULT_SAVE_PATH", "OPENLIST_DEFAULT_COPY_DST_PATH"]
+    ["OPENLIST_TOKEN", "OPENLIST_BASE_URL", "OPENLIST_DEFAULT_COPY_DST_PATH"]
   );
+  assert.equal(result.providerOk, false);
+  assert.equal(result.nextAction, "configure_core_and_provider");
 });
 
 test("validateSkillEnv accepts complete configuration and masks secrets", () => {
   const result = validateSkillEnv({
     QUARK_COOKIE: "b-user-id=abc; __uid=uid-value",
-    BAIDU_COOKIE: "BDUSS=abc; STOKEN=secret-token",
     OPENLIST_TOKEN: "openlist-test-token",
     OPENLIST_BASE_URL: "http://127.0.0.1:5244/",
-    QUARK_DEFAULT_SAVE_URL: "https://pan.quark.cn/list#/list/all/fid-%E5%A4%87%E4%BB%BD",
-    BAIDU_DEFAULT_SAVE_PATH: "/我的资源/影视",
+    QUARK_DEFAULT_SAVE_URL: "/备份资源",
     OPENLIST_DEFAULT_COPY_DST_PATH: "/影视资源备份/影视"
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.providerOk, true);
+  assert.equal(result.nextAction, "ready");
   assert.equal(result.values.OPENLIST_BASE_URL.displayValue, "http://127.0.0.1:5244/");
   assert.equal(result.values.QUARK_COOKIE.secret, true);
-  assert.equal(result.values.BAIDU_COOKIE.secret, true);
   assert.match(result.values.QUARK_COOKIE.displayValue, /^b-user-i/);
-  assert.match(result.values.BAIDU_COOKIE.displayValue, /^BDUSS=ab/);
   assert.doesNotMatch(result.values.QUARK_COOKIE.displayValue, /uid-value/);
-  assert.doesNotMatch(result.values.BAIDU_COOKIE.displayValue, /secret-token/);
+});
+
+test("validateSkillEnv accepts Baidu-only cloud-drive configuration", () => {
+  const result = validateSkillEnv({
+    BAIDU_COOKIE: "BDUSS=abc; STOKEN=secret-token",
+    OPENLIST_TOKEN: "token",
+    OPENLIST_BASE_URL: "http://127.0.0.1:5244/",
+    BAIDU_DEFAULT_SAVE_PATH: "/NAS资源下载",
+    OPENLIST_DEFAULT_COPY_DST_PATH: "/影视资源备份/影视"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.providerOk, true);
+  assert.equal(result.providerResults.find((item) => item.provider === "baidu").ok, true);
+  assert.equal(result.values.BAIDU_COOKIE.secret, true);
+});
+
+test("validateSkillEnv ignores incomplete optional provider when another provider is complete", () => {
+  const result = validateSkillEnv({
+    QUARK_COOKIE: "cookie",
+    QUARK_DEFAULT_SAVE_URL: "not-a-quark-target",
+    BAIDU_COOKIE: "BDUSS=abc; STOKEN=secret-token",
+    OPENLIST_TOKEN: "token",
+    OPENLIST_BASE_URL: "http://127.0.0.1:5244/",
+    BAIDU_DEFAULT_SAVE_PATH: "/NAS资源下载",
+    OPENLIST_DEFAULT_COPY_DST_PATH: "/影视资源备份/影视"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.providerOk, true);
+  assert.deepEqual(result.invalid, []);
+  assert.equal(result.providerResults.find((item) => item.provider === "quark").ok, false);
+});
+
+test("validateSkillEnv reports provider invalid values when no provider is complete", () => {
+  const result = validateSkillEnv({
+    QUARK_COOKIE: "cookie",
+    QUARK_DEFAULT_SAVE_URL: "not-a-quark-target",
+    OPENLIST_TOKEN: "token",
+    OPENLIST_BASE_URL: "http://127.0.0.1:5244/",
+    OPENLIST_DEFAULT_COPY_DST_PATH: "/影视资源备份/影视"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.nextAction, "configure_provider");
+  assert.deepEqual(result.invalid.map((item) => item.key), ["QUARK_DEFAULT_SAVE_URL"]);
 });
 
 test("validateSkillEnv accepts Baidu folder URL as default save target", () => {
   const result = validateSkillEnv({
-    QUARK_COOKIE: "cookie",
     BAIDU_COOKIE: "BDUSS=abc; STOKEN=def",
     OPENLIST_TOKEN: "token",
     OPENLIST_BASE_URL: "http://127.0.0.1:5244/",
-    QUARK_DEFAULT_SAVE_URL: "https://pan.quark.cn/list#/list/all/fid-%E5%A4%87%E4%BB%BD",
     BAIDU_DEFAULT_SAVE_PATH:
       "https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD",
     OPENLIST_DEFAULT_COPY_DST_PATH: "/影视资源备份/影视"
@@ -94,8 +137,8 @@ test("validateSkillEnv validates URL and OpenList path shapes", () => {
 
   assert.equal(result.ok, false);
   assert.deepEqual(
-    result.invalid.map((item) => item.key),
-    ["OPENLIST_BASE_URL", "QUARK_DEFAULT_SAVE_URL", "BAIDU_DEFAULT_SAVE_PATH", "OPENLIST_DEFAULT_COPY_DST_PATH"]
+    result.invalid.map((item) => item.key).sort(),
+    ["BAIDU_DEFAULT_SAVE_PATH", "OPENLIST_BASE_URL", "OPENLIST_DEFAULT_COPY_DST_PATH", "QUARK_DEFAULT_SAVE_URL"].sort()
   );
 });
 

@@ -16,6 +16,7 @@ For OpenClaw, Hermes, or any delegated sub Agent, read `SUBAGENT.md` first. Sub 
 | Task | Sub-Agent command |
 | --- | --- |
 | Search | `node scripts/search-rrdynb.mjs "$KW" --format json --max-candidates 50` |
+| Full readiness check | `npm run check-ready` |
 | ENV check | `npm run check-env -- --json` |
 | Cookie check | `npm run check-cookies` |
 | Quark preview | `node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" --dry-run --format json` |
@@ -26,26 +27,32 @@ For OpenClaw, Hermes, or any delegated sub Agent, read `SUBAGENT.md` first. Sub 
 
 Before editing `.env`, point the user to the setup guide if they need help collecting Cookies, OpenList tokens, or save/copy paths: https://guantou.site/archives/N2CmhISt
 
-Before the first operation that needs Quark saving, Baidu saving, OpenList verification, or NAS/SMB backup copying, check whether the local `.env` file is configured:
+Before the first operation that needs Quark saving, Baidu saving, OpenList verification, or NAS/SMB backup copying, run the full read-only readiness check:
 
 ```bash
-npm run check-env
+npm run check-ready
 ```
 
-After `.env` is filled, validate whether the Quark and Baidu Cookies are still usable:
+`check-ready` is Agent-oriented and outputs JSON by default. It checks:
 
-```bash
-npm run check-cookies
-```
+- `.env` shape and required core keys.
+- Quark/Baidu Cookie validity.
+- At least one usable cloud-drive provider: Quark or Baidu. Both are not required.
+- The configured Quark/Baidu save directory can be reached.
+- The OpenList/NAS backup target can be listed with `refresh:true`.
 
-`check-cookies` is Agent-oriented and outputs JSON by default. Use `nextAction` to decide what to do:
+Use `nextAction` to decide what to do:
 
-- `ready`: Cookies are usable; saving can continue.
-- `configure_missing_cookies`: ask the user to fill the missing Cookie keys.
+- `ready`: configuration and read-only connectivity are usable; save/copy flows can continue.
+- `configure_core`: ask for OpenList URL, OpenList Token, or NAS backup path.
+- `configure_provider`: ask the user to configure at least one complete provider: Quark or Baidu.
+- `configure_core_and_provider`: both core and provider config are incomplete.
+- `fix_openlist_target`: OpenList/NAS backup target cannot be listed.
+- `fix_provider_target`: the configured Quark/Baidu save directory cannot be reached.
 - `refresh_invalid_cookies`: ask the user to log in again and copy fresh Cookies.
 - `retry_network_or_check_access`: the current machine cannot reach the provider or the request timed out.
 
-For a human-readable view, run `npm run check-cookies -- --format text`. The script masks Cookie values and never prints raw Cookies.
+For focused checks, use `npm run check-env -- --json` or `npm run check-cookies`. For a human-readable view, run `npm run check-ready -- --format text`. These scripts mask Cookie/Token values and never print raw secrets.
 
 If `.env` is missing, tell the user to copy `.env.example` to `.env` and fill in the required values. Never ask the user to paste secrets into docs or commit them.
 
@@ -53,28 +60,27 @@ Required `.env` values:
 
 | Key | Required | Meaning |
 | --- | --- | --- |
-| `QUARK_COOKIE` | yes | Quark web Cookie used to save share links into the user's own Quark cloud drive. |
-| `BAIDU_COOKIE` | yes | Baidu Netdisk web Cookie used to save share links into the user's own Baidu cloud drive. Usually needs `BDUSS`/`STOKEN`. |
 | `OPENLIST_TOKEN` | yes | Fixed OpenList API token used for `fs/list`, `fs/get`, `fs/copy`, and task APIs. |
 | `OPENLIST_BASE_URL` | yes | OpenList service base URL, e.g. `http://127.0.0.1:5244`. |
-| `QUARK_DEFAULT_SAVE_URL` | yes | Default Quark cloud folder URL where share resources should be saved. |
-| `BAIDU_DEFAULT_SAVE_PATH` | yes | Default Baidu Netdisk folder path or folder URL where share resources should be saved, e.g. `/我的资源/影视` or `https://pan.baidu.com/disk/main#/index?...&path=%2FNAS资源下载`. |
 | `OPENLIST_DEFAULT_COPY_DST_PATH` | yes | Default OpenList path backed by SMB/NAS storage for backup copies. |
+| `QUARK_COOKIE` + `QUARK_DEFAULT_SAVE_URL` | conditional | Quark provider config. Required only if using Quark. `QUARK_DEFAULT_SAVE_URL` may be `/备份资源` or a full Quark folder URL. |
+| `BAIDU_COOKIE` + `BAIDU_DEFAULT_SAVE_PATH` | conditional | Baidu provider config. Required only if using Baidu. `BAIDU_DEFAULT_SAVE_PATH` may be `/NAS资源下载` or a Baidu folder URL. |
 
 Security rules:
 
 - `.env` contains full credentials. It is ignored by git and must not be committed.
 - Print only masked secret values. `scripts/check-env.mjs` masks `QUARK_COOKIE`, `BAIDU_COOKIE`, and `OPENLIST_TOKEN`.
 - If any value is missing or invalid, stop before saving/copying and explain the specific missing key.
-- `QUARK_DEFAULT_SAVE_URL` must be a full Quark folder URL such as `https://pan.quark.cn/list#/list/all/<fid>-<folder-name>`.
-- `BAIDU_DEFAULT_SAVE_PATH` must be a Baidu cloud-drive path such as `/我的资源/影视`, or a Baidu folder URL copied from the address bar such as `https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD`. It is not a local filesystem path.
+- Quark and Baidu are alternative providers. At least one must be fully configured, but both are not required.
+- `QUARK_DEFAULT_SAVE_URL` may be a Quark cloud-drive path such as `/备份资源`, or a full Quark folder URL such as `https://pan.quark.cn/list#/list/all/<fid>-<folder-name>`. It is not a local filesystem path.
+- `BAIDU_DEFAULT_SAVE_PATH` must be a Baidu cloud-drive path such as `/NAS资源下载`, or a Baidu folder URL copied from the address bar such as `https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD`. It is not a local filesystem path.
 - `OPENLIST_DEFAULT_COPY_DST_PATH` must be an OpenList path such as `/影视资源备份/影视`, not an OS path such as `/mnt/nas/movies`.
 
 Use these values as defaults:
 
 - When the user provides a Quark share but no save folder, use `QUARK_DEFAULT_SAVE_URL`.
 - When the user provides a Baidu share but no save folder, use `BAIDU_DEFAULT_SAVE_PATH`.
-- Before a real Quark/Baidu save on a new install or after an auth failure, run `npm run check-cookies` and require `nextAction: "ready"`.
+- Before a real Quark/Baidu save on a new install or after an auth failure, run `npm run check-ready` and require `nextAction: "ready"`.
 - When calling OpenList APIs, use `OPENLIST_BASE_URL` and `OPENLIST_TOKEN`.
 - When the user asks to back up/copy a saved resource but does not name a target, use `OPENLIST_DEFAULT_COPY_DST_PATH`.
 - Still tell the user the source path, copied object, target path, and final naming before `fs/copy`.
@@ -225,21 +231,21 @@ Check states:
 
 ## Quark Cloud Save
 
-When the user provides a Quark share URL and a destination Quark folder URL, first preview the share contents:
+When the user provides a Quark share URL and a destination Quark cloud-drive path or folder URL, first preview the share contents:
 
 ```bash
 node scripts/quark-save.mjs \
   "https://pan.quark.cn/s/bcbd9d24fe5a#/list/share" \
-  "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E6%9D%A5%E8%87%AA%EF%BC%9A%E5%88%86%E4%BA%AB" \
+  "/备份资源" \
   --dry-run
 ```
 
-The preview reads the public share only and does not need a Cookie. Actual saving requires the user's Quark Cookie through an environment variable:
+The preview reads the public share. If the destination is a path like `/备份资源`, actual saving resolves that path to a Quark `fid` with the user's Cookie. Actual saving requires the user's Quark Cookie through an environment variable:
 
 ```bash
 QUARK_COOKIE='...' node scripts/quark-save.mjs \
   "https://pan.quark.cn/s/bcbd9d24fe5a#/list/share" \
-  "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E6%9D%A5%E8%87%AA%EF%BC%9A%E5%88%86%E4%BA%AB" \
+  "/备份资源" \
   --context-name "你的友好邻居蜘蛛侠 第一季" \
   --resource-type series
 ```
@@ -269,6 +275,7 @@ node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" \
 Useful options:
 
 - `--select all|1,3|2-5`: choose which rows to save.
+- Destination positional argument accepts either `/夸克目录` or a full Quark folder URL.
 - `--yes`: skip the confirmation prompt and save the selected rows immediately.
 - `--dry-run`: preview only; no Cookie needed and no save happens.
 - `--format json` / `--json`: output a single structured JSON object for sub Agents.
@@ -291,7 +298,7 @@ When the user provides a Baidu Netdisk share URL and a destination Baidu cloud-d
 ```bash
 node scripts/baidu-save.mjs \
   "https://pan.baidu.com/s/1abcDEF?pwd=8888" \
-  "/我的资源/影视" \
+  "/NAS资源下载" \
   --dry-run
 ```
 
@@ -309,7 +316,7 @@ Actual saving requires the user's Baidu Netdisk Cookie through `BAIDU_COOKIE`:
 ```bash
 BAIDU_COOKIE='...' node scripts/baidu-save.mjs \
   "https://pan.baidu.com/s/1abcDEF?pwd=8888" \
-  "/我的资源/影视" \
+  "/NAS资源下载" \
   --context-name "蜘蛛侠：平行宇宙" \
   --resource-type movie
 ```
@@ -476,7 +483,7 @@ Notes:
 
 ## Workflow
 
-1. For Quark save, Baidu save, OpenList verification, or NAS/SMB copy, run `npm run check-env` first in a fresh install or whenever `.env` may be missing/stale.
+1. For Quark save, Baidu save, OpenList verification, or NAS/SMB copy, run `npm run check-ready` first in a fresh install or whenever `.env` may be missing/stale. Continue only when `nextAction` is `ready`.
 2. Search the exact user keyword first.
 3. If results are thin or off-target, try 1-3 variants: remove book marks, remove spaces/punctuation, include original English title if the user gave one.
 4. Default to `res=all` and `src=all` so the helper can rank by PanSou `results[]` order; use `cloud_types`, `plugins`, `channels`, `include`, or `exclude` only when the user asks or the result set needs narrowing.

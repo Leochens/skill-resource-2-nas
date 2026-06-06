@@ -7,6 +7,7 @@
     "baidu-save": "node scripts/baidu-save.mjs",
     "check-cookies": "node scripts/check-cookies.mjs",
     "check-env": "node scripts/check-env.mjs",
+    "check-ready": "node scripts/check-ready.mjs",
     "quark-save": "node scripts/quark-save.mjs",
     "search": "node scripts/search-rrdynb.mjs",
     "test": "node --test tests/*.test.mjs"

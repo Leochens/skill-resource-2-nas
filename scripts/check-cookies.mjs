@@ -167,13 +167,15 @@ async function validateCookieConfig(env = {}, options = {}) {
     }
   }
 
+  const validProviders = results.filter((item) => item.ok).map((item) => item.provider);
   const nextAction = decideNextAction(results);
   return {
-    ok: results.every((item) => item.ok),
+    ok: validProviders.length > 0,
     tool: "check-cookies",
     mode: "agent-json",
     nextAction,
-    recommendations: buildRecommendations(results),
+    validProviders,
+    recommendations: nextAction === "ready" ? [] : buildRecommendations(results),
     secretsMasked: true,
     envFile: options.envFile || DEFAULT_ENV_FILE,
     envFileExists: options.envFileExists !== false,
@@ -331,6 +333,7 @@ function stateToLabel(state) {
 }
 
 function decideNextAction(results) {
+  if (results.some((item) => item.ok)) return "ready";
   if (results.some((item) => item.state === "missing")) return "configure_missing_cookies";
   if (results.some((item) => item.state === "invalid")) return "refresh_invalid_cookies";
   if (results.some((item) => item.state === "network_error")) return "retry_network_or_check_access";

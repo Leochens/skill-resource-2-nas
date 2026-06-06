@@ -27,8 +27,7 @@ Copy the example environment file and fill in real values:
 
 ```bash
 cp .env.example .env
-npm run check-env
-npm run check-cookies
+npm run check-ready
 ```
 
 Configuration guide:
@@ -45,9 +44,11 @@ Never commit `.env`. It contains full account credentials.
 | `BAIDU_COOKIE` | Baidu Netdisk web Cookie used to save Baidu share links. |
 | `OPENLIST_TOKEN` | Fixed OpenList API token for list, get, copy, and task APIs. |
 | `OPENLIST_BASE_URL` | OpenList base URL, for example `http://127.0.0.1:5244`. |
-| `QUARK_DEFAULT_SAVE_URL` | Default Quark destination folder URL. |
-| `BAIDU_DEFAULT_SAVE_PATH` | Default Baidu destination path or folder URL. |
 | `OPENLIST_DEFAULT_COPY_DST_PATH` | Default OpenList path backed by SMB/NAS storage. |
+| `QUARK_COOKIE` + `QUARK_DEFAULT_SAVE_URL` | Quark provider config. `QUARK_DEFAULT_SAVE_URL` can be `/备份资源` or a full Quark folder URL. |
+| `BAIDU_COOKIE` + `BAIDU_DEFAULT_SAVE_PATH` | Baidu provider config. `BAIDU_DEFAULT_SAVE_PATH` can be `/NAS资源下载` or a Baidu folder URL. |
+
+Quark and Baidu are alternatives. At least one provider must be fully configured; both are not required.
 
 ## Usage
 
@@ -57,16 +58,16 @@ Search resources:
 npm run search -- "蜘蛛侠"
 ```
 
-Check whether Quark/Baidu Cookies are usable:
+Check whether the whole setup is usable:
 
 ```bash
-npm run check-cookies
+npm run check-ready
 ```
 
-This prints JSON by default for Agents. For a human-readable view:
+This prints JSON by default for Agents and tests ENV, Cookie validity, provider save target connectivity, and OpenList/NAS connectivity. For a human-readable view:
 
 ```bash
-npm run check-cookies -- --format text
+npm run check-ready -- --format text
 ```
 
 Preview a Quark share:

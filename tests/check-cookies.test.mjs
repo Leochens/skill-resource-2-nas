@@ -69,6 +69,33 @@ test("validateCookieConfig checks Quark and Baidu with injected fetch", async ()
   assert.equal(seenUrls.length, 2);
 });
 
+test("validateCookieConfig is ready when one default provider is valid", async () => {
+  const result = await validateCookieConfig(
+    { BAIDU_COOKIE: "baidu-cookie" },
+    {
+      fetchImpl: async () => jsonResponse({ errno: 0, username: "tester" })
+    }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.nextAction, "ready");
+  assert.deepEqual(result.validProviders, ["baidu"]);
+  assert.equal(result.results.find((item) => item.provider === "quark").state, "missing");
+});
+
+test("validateCookieConfig still requires an explicitly requested provider", async () => {
+  const result = await validateCookieConfig(
+    { BAIDU_COOKIE: "baidu-cookie" },
+    {
+      providers: ["quark"],
+      fetchImpl: async () => jsonResponse({ code: 0 })
+    }
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.nextAction, "configure_missing_cookies");
+});
+
 test("validateCookieConfig marks Baidu errno errors as invalid", async () => {
   const result = await validateCookieConfig(
     { BAIDU_COOKIE: "bad-cookie" },

@@ -31,7 +31,8 @@ async function main() {
     process.exit(2);
   }
 
-  const result = await prepareQuarkSave(args);
+  const cookie = resolveCookie(args);
+  const result = await prepareQuarkSave({ ...args, cookie });
   const jsonOutput = args.format === "json";
 
   if (args.dryRun) {
@@ -48,9 +49,11 @@ async function main() {
     console.log(renderShareItemsTable(result));
   }
 
-  const cookie = resolveCookie(args);
   if (!cookie) {
     throw new Error(`缺少夸克 Cookie。请设置 ${args.cookieEnv} 环境变量，或使用 --cookie-env 指向你的 Cookie 环境变量。`);
+  }
+  if (!result.destination?.fid) {
+    throw new Error(`夸克保存目录无法解析为 fid：${args.toUrl}。如果使用 /备份资源 这种路径，请确认目录存在且 Cookie 有效。`);
   }
   if (jsonOutput && !args.yes) {
     throw new Error("--format json 保存模式必须在用户确认后搭配 --yes 使用；预览请使用 --dry-run。");
@@ -179,7 +182,12 @@ function printUsage() {
 
 async function prepareQuarkSave(args) {
   const share = parseQuarkShareUrl(args.shareUrl);
-  const destination = parseQuarkFolderUrl(args.toUrl);
+  const destination = await resolveQuarkDestination({
+    apiBase: args.apiBase,
+    timeoutMs: args.timeoutMs,
+    cookie: args.cookie,
+    value: args.toUrl
+  });
   const tokenResponse = await getShareToken({
     apiBase: args.apiBase,
     timeoutMs: args.timeoutMs,
@@ -318,9 +326,19 @@ function parseQuarkShareUrl(value) {
 }
 
 function parseQuarkFolderUrl(value) {
+  const text = String(value || "").trim();
+  if (isCloudDrivePath(text)) {
+    return {
+      fid: "",
+      name: getCloudPathBasename(text),
+      path: normalizeCloudDrivePath(text),
+      inputType: "path",
+      needsResolution: true
+    };
+  }
   let parsed;
   try {
-    parsed = new URL(value);
+    parsed = new URL(text);
   } catch {
     throw new Error(`Invalid Quark folder URL: ${value}`);
   }
@@ -328,6 +346,91 @@ function parseQuarkFolderUrl(value) {
   if (!fid) throw new Error(`Destination folder URL must include /list/all/<fid-name>: ${value}`);
   const name = extractNameFromHash(parsed.hash, fid);
   return { fid, name: name || fid };
+}
+
+async function resolveQuarkDestination({ apiBase, timeoutMs, cookie, value }) {
+  const parsed = parseQuarkFolderUrl(value);
+  if (!parsed.needsResolution) return parsed;
+  if (!cookie) return parsed;
+  const resolved = await resolveQuarkFolderPath({
+    apiBase,
+    timeoutMs,
+    cookie,
+    targetPath: parsed.path
+  });
+  return {
+    ...parsed,
+    ...resolved,
+    needsResolution: false
+  };
+}
+
+async function resolveQuarkFolderPath({ apiBase, timeoutMs, cookie, targetPath }) {
+  const normalizedPath = normalizeCloudDrivePath(targetPath);
+  const segments = splitCloudDrivePath(normalizedPath);
+  let pdirFid = "0";
+  let current = { fid: "0", name: "/", path: "/" };
+  for (const segment of segments) {
+    const items = await listQuarkFolderItems({ apiBase, timeoutMs, cookie, pdirFid });
+    const match = items.find((item) => item.isDir && item.name === segment);
+    if (!match) {
+      throw new Error(`夸克目录不存在：${joinCloudPath(current.path, segment)}。请先在夸克网盘创建该目录，或改用完整文件夹 URL。`);
+    }
+    current = {
+      fid: match.fid,
+      name: match.name,
+      path: joinCloudPath(current.path, match.name)
+    };
+    pdirFid = match.fid;
+  }
+  return current;
+}
+
+async function listQuarkFolderItems({ apiBase, timeoutMs, cookie, pdirFid }) {
+  const response = await fetchQuarkJson(`${normalizeApiBase(apiBase)}/1/clouddrive/file/sort`, {
+    method: "GET",
+    timeoutMs,
+    cookie,
+    query: {
+      pr: "ucpro",
+      fr: "pc",
+      uc_param_str: "",
+      pdir_fid: pdirFid || "0",
+      _page: "1",
+      _size: "200",
+      _fetch_total: "1",
+      _fetch_sub_dirs: "0",
+      _sort: "file_type:asc,updated_at:desc"
+    }
+  });
+  return normalizeShareItems(response.data?.list || []);
+}
+
+function isCloudDrivePath(value) {
+  return String(value || "").startsWith("/") && !String(value).includes("..");
+}
+
+function normalizeCloudDrivePath(value) {
+  const parts = splitCloudDrivePath(value);
+  return `/${parts.join("/")}`;
+}
+
+function splitCloudDrivePath(value) {
+  return String(value || "")
+    .split("/")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getCloudPathBasename(value) {
+  const parts = splitCloudDrivePath(value);
+  return parts.at(-1) || "/";
+}
+
+function joinCloudPath(basePath, name) {
+  const base = normalizeCloudDrivePath(basePath || "/");
+  const cleanName = String(name || "").replace(/^\/+/g, "");
+  return base === "/" ? `/${cleanName}` : `${base}/${cleanName}`;
 }
 
 function extractFidFromHash(hash, scope) {
@@ -993,6 +1096,7 @@ export {
   parseQuarkFolderUrl,
   parseQuarkShareUrl,
   parseSelection,
+  resolveQuarkFolderPath,
   resolveRenamePlan,
   renderShareItemsTable
 };

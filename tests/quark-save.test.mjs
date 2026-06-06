@@ -47,6 +47,16 @@ test("parseQuarkFolderUrl extracts destination fid and decoded name", () => {
   );
 });
 
+test("parseQuarkFolderUrl accepts cloud-drive paths for later fid resolution", () => {
+  assert.deepEqual(parseQuarkFolderUrl("/备份资源"), {
+    fid: "",
+    name: "备份资源",
+    path: "/备份资源",
+    inputType: "path",
+    needsResolution: true
+  });
+});
+
 test("applyEnvDefaults uses configured default Quark save URL", () => {
   const args = applyEnvDefaults(
     {
@@ -56,15 +66,11 @@ test("applyEnvDefaults uses configured default Quark save URL", () => {
     },
     {
       QUARK_COOKIE: "cookie-value",
-      QUARK_DEFAULT_SAVE_URL:
-        "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E6%9D%A5%E8%87%AA%EF%BC%9A%E5%88%86%E4%BA%AB"
+      QUARK_DEFAULT_SAVE_URL: "/备份资源"
     }
   );
 
-  assert.equal(
-    args.toUrl,
-    "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E6%9D%A5%E8%87%AA%EF%BC%9A%E5%88%86%E4%BA%AB"
-  );
+  assert.equal(args.toUrl, "/备份资源");
   assert.equal(args.env.QUARK_COOKIE, "cookie-value");
 });
 
