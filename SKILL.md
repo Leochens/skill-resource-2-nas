@@ -28,7 +28,7 @@ Required `.env` values:
 | `QUARK_COOKIE` | yes | Quark web Cookie used to save share links into the user's own Quark cloud drive. |
 | `BAIDU_COOKIE` | yes | Baidu Netdisk web Cookie used to save share links into the user's own Baidu cloud drive. Usually needs `BDUSS`/`STOKEN`. |
 | `OPENLIST_TOKEN` | yes | Fixed OpenList API token used for `fs/list`, `fs/get`, `fs/copy`, and task APIs. |
-| `OPENLIST_BASE_URL` | yes | OpenList service base URL, e.g. `http://192.168.5.22:5244`. |
+| `OPENLIST_BASE_URL` | yes | OpenList service base URL, e.g. `http://127.0.0.1:5244`. |
 | `QUARK_DEFAULT_SAVE_URL` | yes | Default Quark cloud folder URL where share resources should be saved. |
 | `BAIDU_DEFAULT_SAVE_PATH` | yes | Default Baidu Netdisk folder path or folder URL where share resources should be saved, e.g. `/我的资源/影视` or `https://pan.baidu.com/disk/main#/index?...&path=%2FNAS资源下载`. |
 | `OPENLIST_DEFAULT_COPY_DST_PATH` | yes | Default OpenList path backed by SMB/NAS storage for backup copies. |

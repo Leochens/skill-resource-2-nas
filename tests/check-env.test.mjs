@@ -45,15 +45,15 @@ test("validateSkillEnv accepts complete configuration and masks secrets", () => 
   const result = validateSkillEnv({
     QUARK_COOKIE: "b-user-id=abc; __uid=uid-value",
     BAIDU_COOKIE: "BDUSS=abc; STOKEN=secret-token",
-    OPENLIST_TOKEN: "openlist-da0274ca-4397-token",
-    OPENLIST_BASE_URL: "http://192.168.5.22:5244/",
+    OPENLIST_TOKEN: "openlist-test-token",
+    OPENLIST_BASE_URL: "http://127.0.0.1:5244/",
     QUARK_DEFAULT_SAVE_URL: "https://pan.quark.cn/list#/list/all/fid-%E5%A4%87%E4%BB%BD",
     BAIDU_DEFAULT_SAVE_PATH: "/我的资源/影视",
     OPENLIST_DEFAULT_COPY_DST_PATH: "/影视资源备份/影视"
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.values.OPENLIST_BASE_URL.displayValue, "http://192.168.5.22:5244/");
+  assert.equal(result.values.OPENLIST_BASE_URL.displayValue, "http://127.0.0.1:5244/");
   assert.equal(result.values.QUARK_COOKIE.secret, true);
   assert.equal(result.values.BAIDU_COOKIE.secret, true);
   assert.match(result.values.QUARK_COOKIE.displayValue, /^b-user-i/);
@@ -67,7 +67,7 @@ test("validateSkillEnv accepts Baidu folder URL as default save target", () => {
     QUARK_COOKIE: "cookie",
     BAIDU_COOKIE: "BDUSS=abc; STOKEN=def",
     OPENLIST_TOKEN: "token",
-    OPENLIST_BASE_URL: "http://192.168.5.22:5244/",
+    OPENLIST_BASE_URL: "http://127.0.0.1:5244/",
     QUARK_DEFAULT_SAVE_URL: "https://pan.quark.cn/list#/list/all/fid-%E5%A4%87%E4%BB%BD",
     BAIDU_DEFAULT_SAVE_PATH:
       "https://pan.baidu.com/disk/main#/index?category=all&path=%2FNAS%E8%B5%84%E6%BA%90%E4%B8%8B%E8%BD%BD",

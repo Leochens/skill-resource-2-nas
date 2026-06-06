@@ -29,7 +29,7 @@ const REQUIRED_CONFIG = [
     key: "OPENLIST_BASE_URL",
     label: "OpenList 地址",
     secret: false,
-    hint: "OpenList 服务地址，例如 http://192.168.5.22:5244。",
+    hint: "OpenList 服务地址，例如 http://127.0.0.1:5244。",
     validate: (value) => isHttpUrl(value)
   },
   {
