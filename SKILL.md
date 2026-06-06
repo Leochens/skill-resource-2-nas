@@ -292,10 +292,13 @@ Agent responsibility before saving:
 
 - Detect provider from the link. Baidu links use `pan.baidu.com`; Quark links use `pan.quark.cn`.
 - Inspect the dry-run table plus the conversation/search context and decide the canonical resource name.
+- If the dry-run table shows a single top-level folder and the type is unclear, inspect one level deeper with `GET /share/list` using that row's `path` before deciding `--resource-type`.
 - If the resource is a series, tell the user it is a series and pass `--resource-type series`.
+- If child folders/files look like quality or version variants, such as `1080p`, `4K`, `SDR`, `彩色版`, or `黑白版`, treat it as `collection`, not `series`.
 - If the share title contains separators or evasive characters, correct the resource name from context and pass it with `--context-name`.
 - Before executing the save, tell the user: source share URL, selected rows, target Baidu path, and final naming/rename plan.
 - For non-trivial naming, pass an explicit Agent decision plan with `--rename-plan-json`. The script attempts a post-transfer Baidu rename through `/api/filemanager`.
+- The Baidu target is always a Baidu cloud-drive path. A folder named `/NAS资源下载` is still a Baidu folder unless the user explicitly asks for an OpenList/NAS copy after cloud save.
 
 Example Agent rename plan:
 
@@ -319,11 +322,18 @@ Useful options:
 Baidu API flow used by the helper:
 
 - `GET /s/<share-id>`: read the share page and extract `bdstoken`, `shareid`, `share_uk`, and root files.
+- Share page context may appear either as pure JSON such as `window.yunData.setData({...})`, or as the current two-part shape `window.yunData={...}; locals.mset({...})`. The helper supports both. If parsing fails with `无法解析百度分享页中的分享上下文`, inspect the page for these fields and add a parser regression test before changing the script.
 - `POST /share/verify`: verify extraction code and collect `randsk`/share cookies when needed.
 - `GET /share/list`: list share files when the share page does not include complete file rows.
 - `POST /share/transfer`: save selected `fsidlist` to the target Baidu cloud-drive path.
-- `GET /api/list`: list the target path after transfer when post-save rename is needed.
+- `GET /api/list`: list the target path after transfer when post-save rename or save verification is needed.
 - `POST /api/filemanager?opera=rename`: apply the Agent-approved rename plan to saved top-level files/folders.
+
+After Baidu save:
+
+- Treat `share/transfer` response `errno: 0` as a successful cloud-drive save.
+- Verify the target Baidu path with `GET /api/list` and match the Agent-approved resource name.
+- If the saved folder already exists and Baidu creates a duplicate/new-copy name, report the actual name returned by the target directory listing and use that name for any later OpenList/NAS copy step.
 
 ## OpenList Verification and NAS Download
 
