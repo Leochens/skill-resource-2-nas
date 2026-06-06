@@ -7,6 +7,7 @@ Codex skill for searching movie and TV resources through PanSou, returning ranke
 - Search PanSou and return the top 50 ranked Baidu/Quark resource links as Markdown or JSON by default.
 - Preserve concrete download links, extraction codes, provider names, source notes, and timestamps.
 - Preview Quark and Baidu share contents before saving.
+- Validate Quark and Baidu Cookies with Agent-friendly JSON before real saves.
 - Save Quark shares to a configured Quark folder.
 - Save Baidu shares to a configured Baidu path or Baidu folder URL.
 - Let the Agent classify resources as movie, series, or collection before saving.
@@ -27,6 +28,7 @@ Copy the example environment file and fill in real values:
 ```bash
 cp .env.example .env
 npm run check-env
+npm run check-cookies
 ```
 
 Configuration guide:
@@ -53,6 +55,18 @@ Search resources:
 
 ```bash
 npm run search -- "蜘蛛侠"
+```
+
+Check whether Quark/Baidu Cookies are usable:
+
+```bash
+npm run check-cookies
+```
+
+This prints JSON by default for Agents. For a human-readable view:
+
+```bash
+npm run check-cookies -- --format text
 ```
 
 Preview a Quark share:
@@ -94,7 +108,7 @@ npm test
 
 ```text
 agents/              Agent metadata
-scripts/             CLI helpers for search, env checks, Quark save, and Baidu save
+scripts/             CLI helpers for search, env/Cookie checks, Quark save, and Baidu save
 tests/               Node test suite
 SKILL.md             Main skill instructions
 SUBAGENT.md          Sub-agent runbook for OpenClaw, Hermes, and similar agents

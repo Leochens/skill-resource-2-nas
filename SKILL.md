@@ -17,6 +17,7 @@ For OpenClaw, Hermes, or any delegated sub Agent, read `SUBAGENT.md` first. Sub 
 | --- | --- |
 | Search | `node scripts/search-rrdynb.mjs "$KW" --format json --max-candidates 50` |
 | ENV check | `npm run check-env -- --json` |
+| Cookie check | `npm run check-cookies` |
 | Quark preview | `node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" --dry-run --format json` |
 | Baidu preview | `node scripts/baidu-save.mjs "$SHARE_URL" "$DEST_PATH_OR_URL" --dry-run --format json` |
 | Confirmed save | Re-run the preview command with `--yes --format json` after user/supervisor confirmation. |
@@ -30,6 +31,21 @@ Before the first operation that needs Quark saving, Baidu saving, OpenList verif
 ```bash
 npm run check-env
 ```
+
+After `.env` is filled, validate whether the Quark and Baidu Cookies are still usable:
+
+```bash
+npm run check-cookies
+```
+
+`check-cookies` is Agent-oriented and outputs JSON by default. Use `nextAction` to decide what to do:
+
+- `ready`: Cookies are usable; saving can continue.
+- `configure_missing_cookies`: ask the user to fill the missing Cookie keys.
+- `refresh_invalid_cookies`: ask the user to log in again and copy fresh Cookies.
+- `retry_network_or_check_access`: the current machine cannot reach the provider or the request timed out.
+
+For a human-readable view, run `npm run check-cookies -- --format text`. The script masks Cookie values and never prints raw Cookies.
 
 If `.env` is missing, tell the user to copy `.env.example` to `.env` and fill in the required values. Never ask the user to paste secrets into docs or commit them.
 
@@ -58,6 +74,7 @@ Use these values as defaults:
 
 - When the user provides a Quark share but no save folder, use `QUARK_DEFAULT_SAVE_URL`.
 - When the user provides a Baidu share but no save folder, use `BAIDU_DEFAULT_SAVE_PATH`.
+- Before a real Quark/Baidu save on a new install or after an auth failure, run `npm run check-cookies` and require `nextAction: "ready"`.
 - When calling OpenList APIs, use `OPENLIST_BASE_URL` and `OPENLIST_TOKEN`.
 - When the user asks to back up/copy a saved resource but does not name a target, use `OPENLIST_DEFAULT_COPY_DST_PATH`.
 - Still tell the user the source path, copied object, target path, and final naming before `fs/copy`.
