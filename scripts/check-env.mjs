@@ -14,6 +14,12 @@ const REQUIRED_CONFIG = [
     hint: "从已登录夸克网页请求中复制 Cookie，用于保存分享资源到自己的夸克网盘。"
   },
   {
+    key: "BAIDU_COOKIE",
+    label: "百度网盘 Cookie",
+    secret: true,
+    hint: "从已登录百度网盘网页请求中复制 Cookie，通常需要包含 BDUSS、STOKEN 等字段，用于保存分享资源到自己的百度网盘。"
+  },
+  {
     key: "OPENLIST_TOKEN",
     label: "OpenList 固定 API Token",
     secret: true,
@@ -32,6 +38,13 @@ const REQUIRED_CONFIG = [
     secret: false,
     hint: "夸克网盘目标文件夹 URL，例如 https://pan.quark.cn/list#/list/all/<fid>-<name>。",
     validate: (value) => isQuarkFolderUrl(value)
+  },
+  {
+    key: "BAIDU_DEFAULT_SAVE_PATH",
+    label: "默认百度保存目录",
+    secret: false,
+    hint: "百度网盘目标目录路径，例如 /我的资源/影视。必须是百度网盘内路径，不是本机路径。",
+    validate: (value) => isCloudDrivePath(value)
   },
   {
     key: "OPENLIST_DEFAULT_COPY_DST_PATH",
@@ -196,7 +209,7 @@ function formatEnvCheckResult(result) {
       lines.push(`- ${item.key}: ${item.hint}`);
     }
   } else {
-    lines.push("", "ENV 配置可用于夸克保存、OpenList 刷新和 SMB/NAS 复制。");
+    lines.push("", "ENV 配置可用于夸克/百度保存、OpenList 刷新和 SMB/NAS 复制。");
   }
 
   return lines.join("\n");
@@ -227,6 +240,10 @@ function isQuarkFolderUrl(value) {
 }
 
 function isOpenListPath(value) {
+  return isCloudDrivePath(value);
+}
+
+function isCloudDrivePath(value) {
   return String(value || "").startsWith("/") && !String(value).includes("..");
 }
 

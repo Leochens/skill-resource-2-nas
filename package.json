@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "baidu-save": "node scripts/baidu-save.mjs",
     "check-env": "node scripts/check-env.mjs",
     "quark-save": "node scripts/quark-save.mjs",
     "search": "node scripts/search-rrdynb.mjs",

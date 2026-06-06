@@ -7,11 +7,11 @@ description: Use when a user asks to search for a movie, TV title, animation, or
 
 Use this skill when the user asks to search for a movie/TV/media title or asks for download/resource links. The default upstream is the PanSou instance at `https://so.252035.xyz/`, backed by the `fish2018/pansou` API.
 
-Use `scripts/quark-save.mjs` when the user wants to save a Quark share link into their own Quark cloud drive folder. This workflow transfers the resource into the user's cloud drive only; it does not download files to the local filesystem.
+Use `scripts/quark-save.mjs` when the user wants to save a Quark share link into their own Quark cloud drive folder. Use `scripts/baidu-save.mjs` when the user wants to save a Baidu Netdisk share link into their own Baidu cloud drive path. These workflows transfer the resource into the user's cloud drive only; they do not download files to the local filesystem.
 
 ## First-Time ENV Setup
 
-Before the first operation that needs Quark saving, OpenList verification, or NAS/SMB backup copying, check whether the local `.env` file is configured:
+Before the first operation that needs Quark saving, Baidu saving, OpenList verification, or NAS/SMB backup copying, check whether the local `.env` file is configured:
 
 ```bash
 npm run check-env
@@ -24,22 +24,26 @@ Required `.env` values:
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `QUARK_COOKIE` | yes | Quark web Cookie used to save share links into the user's own Quark cloud drive. |
+| `BAIDU_COOKIE` | yes | Baidu Netdisk web Cookie used to save share links into the user's own Baidu cloud drive. Usually needs `BDUSS`/`STOKEN`. |
 | `OPENLIST_TOKEN` | yes | Fixed OpenList API token used for `fs/list`, `fs/get`, `fs/copy`, and task APIs. |
 | `OPENLIST_BASE_URL` | yes | OpenList service base URL, e.g. `http://192.168.5.22:5244`. |
 | `QUARK_DEFAULT_SAVE_URL` | yes | Default Quark cloud folder URL where share resources should be saved. |
+| `BAIDU_DEFAULT_SAVE_PATH` | yes | Default Baidu Netdisk folder path where share resources should be saved, e.g. `/我的资源/影视`. |
 | `OPENLIST_DEFAULT_COPY_DST_PATH` | yes | Default OpenList path backed by SMB/NAS storage for backup copies. |
 
 Security rules:
 
 - `.env` contains full credentials. It is ignored by git and must not be committed.
-- Print only masked secret values. `scripts/check-env.mjs` masks `QUARK_COOKIE` and `OPENLIST_TOKEN`.
+- Print only masked secret values. `scripts/check-env.mjs` masks `QUARK_COOKIE`, `BAIDU_COOKIE`, and `OPENLIST_TOKEN`.
 - If any value is missing or invalid, stop before saving/copying and explain the specific missing key.
 - `QUARK_DEFAULT_SAVE_URL` must be a full Quark folder URL such as `https://pan.quark.cn/list#/list/all/<fid>-<folder-name>`.
+- `BAIDU_DEFAULT_SAVE_PATH` must be a Baidu cloud-drive path such as `/我的资源/影视`, not a local filesystem path.
 - `OPENLIST_DEFAULT_COPY_DST_PATH` must be an OpenList path such as `/影视资源备份/影视`, not an OS path such as `/mnt/nas/movies`.
 
 Use these values as defaults:
 
 - When the user provides a Quark share but no save folder, use `QUARK_DEFAULT_SAVE_URL`.
+- When the user provides a Baidu share but no save folder, use `BAIDU_DEFAULT_SAVE_PATH`.
 - When calling OpenList APIs, use `OPENLIST_BASE_URL` and `OPENLIST_TOKEN`.
 - When the user asks to back up/copy a saved resource but does not name a target, use `OPENLIST_DEFAULT_COPY_DST_PATH`.
 - Still tell the user the source path, copied object, target path, and final naming before `fs/copy`.
@@ -248,9 +252,82 @@ Quark API flow used by the helper:
 - `GET /1/clouddrive/task`: poll the async save task until completion.
 - `POST /1/clouddrive/file/rename`: apply the Agent-approved rename plan to saved top-level files/folders.
 
+## Baidu Netdisk Save
+
+When the user provides a Baidu Netdisk share URL and a destination Baidu cloud-drive path, first preview the share contents:
+
+```bash
+node scripts/baidu-save.mjs \
+  "https://pan.baidu.com/s/1abcDEF?pwd=8888" \
+  "/我的资源/影视" \
+  --dry-run
+```
+
+If the user omits the destination path, use `BAIDU_DEFAULT_SAVE_PATH` from `.env`. Links in `/share/init?surl=...&pwd=...` form are also supported. If the extraction code is not in the URL, pass it with `--passcode`:
+
+```bash
+node scripts/baidu-save.mjs "$SHARE_URL" "$BAIDU_DEFAULT_SAVE_PATH" \
+  --passcode 8888 \
+  --context-name "你的友好邻居蜘蛛侠 第一季" \
+  --resource-type series
+```
+
+Actual saving requires the user's Baidu Netdisk Cookie through `BAIDU_COOKIE`:
+
+```bash
+BAIDU_COOKIE='...' node scripts/baidu-save.mjs \
+  "https://pan.baidu.com/s/1abcDEF?pwd=8888" \
+  "/我的资源/影视" \
+  --context-name "蜘蛛侠：平行宇宙" \
+  --resource-type movie
+```
+
+Security rules:
+
+- Treat `BAIDU_COOKIE` as a full login credential. Never print it, commit it, or put it in docs.
+- Prefer `--cookie-env BAIDU_COOKIE`; if the user uses another env var, pass that name with `--cookie-env`.
+- Keep the default interactive confirmation. Use `--yes` only when the user explicitly asked for non-interactive execution or has already confirmed the selected rows.
+
+Agent responsibility before saving:
+
+- Detect provider from the link. Baidu links use `pan.baidu.com`; Quark links use `pan.quark.cn`.
+- Inspect the dry-run table plus the conversation/search context and decide the canonical resource name.
+- If the resource is a series, tell the user it is a series and pass `--resource-type series`.
+- If the share title contains separators or evasive characters, correct the resource name from context and pass it with `--context-name`.
+- Before executing the save, tell the user: source share URL, selected rows, target Baidu path, and final naming/rename plan.
+- For non-trivial naming, pass an explicit Agent decision plan with `--rename-plan-json`. The script attempts a post-transfer Baidu rename through `/api/filemanager`.
+
+Example Agent rename plan:
+
+```bash
+node scripts/baidu-save.mjs "$SHARE_URL" "$BAIDU_DEFAULT_SAVE_PATH" \
+  --context-name "你的友好邻居蜘蛛侠 第一季" \
+  --resource-type series \
+  --rename-plan-json '[{"rank":1,"name":"你的友好邻居蜘蛛侠 第一季","reason":"Agent 根据搜索上下文修正规避字符和季名"}]'
+```
+
+Useful options:
+
+- `--select all|1,3|2-5`: choose which rows to save.
+- `--yes`: skip the confirmation prompt and save the selected rows immediately.
+- `--dry-run`: preview only; no save happens.
+- `--no-rename`: save without post-save rename.
+- `--passcode 8888`: provide a Baidu extraction code if the URL does not include `pwd`.
+- `--resource-type auto|series|movie|collection`: pass the Agent's resource classification.
+- `--rename-plan-json '[{"rank":1,"name":"...","reason":"..."}]'`: pass Agent-decided final names. `rank` refers to the row number in the preview table.
+
+Baidu API flow used by the helper:
+
+- `GET /s/<share-id>`: read the share page and extract `bdstoken`, `shareid`, `share_uk`, and root files.
+- `POST /share/verify`: verify extraction code and collect `randsk`/share cookies when needed.
+- `GET /share/list`: list share files when the share page does not include complete file rows.
+- `POST /share/transfer`: save selected `fsidlist` to the target Baidu cloud-drive path.
+- `GET /api/list`: list the target path after transfer when post-save rename is needed.
+- `POST /api/filemanager?opera=rename`: apply the Agent-approved rename plan to saved top-level files/folders.
+
 ## OpenList Verification and NAS Download
 
-Use OpenList when the user wants to verify that a just-saved Quark resource is visible through their NAS/OpenList mount, or when they want to download a mounted resource through OpenList APIs.
+Use OpenList when the user wants to verify that a just-saved Quark or Baidu resource is visible through their NAS/OpenList mount, or when they want to download a mounted resource through OpenList APIs.
 
 Authentication:
 
@@ -355,7 +432,7 @@ Notes:
 
 ## Workflow
 
-1. For Quark save, OpenList verification, or NAS/SMB copy, run `npm run check-env` first in a fresh install or whenever `.env` may be missing/stale.
+1. For Quark save, Baidu save, OpenList verification, or NAS/SMB copy, run `npm run check-env` first in a fresh install or whenever `.env` may be missing/stale.
 2. Search the exact user keyword first.
 3. If results are thin or off-target, try 1-3 variants: remove book marks, remove spaces/punctuation, include original English title if the user gave one.
 4. Default to `res=all` and `src=all` so the helper can rank by PanSou `results[]` order; use `cloud_types`, `plugins`, `channels`, `include`, or `exclude` only when the user asks or the result set needs narrowing.
@@ -363,6 +440,7 @@ Notes:
 6. If the user asks whether links are valid, rerun with `--check-links` or call `/api/check/links` on the visible links and include each state/summary.
 7. If `/api/health` reports `auth_enabled: true`, authenticate first or ask the user for credentials/token.
 8. If the user asks to save a Quark result into their own drive, run `scripts/quark-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script. Use `QUARK_DEFAULT_SAVE_URL` when the user does not specify a save folder.
-9. If the user asks whether the saved Quark resource appears in OpenList, call `POST /api/fs/list` with `refresh: true` every time, then report whether the Agent-approved resource name was found.
-10. If the user asks to back up into a NAS/SMB OpenList storage, state the source path, exact object name, target backup directory, and final naming before execution; then use `POST /api/fs/copy`, poll copy task status, and verify the destination with `refresh: true`. Use `OPENLIST_DEFAULT_COPY_DST_PATH` when the user does not specify a target.
-11. If the user asks to download into NAS/server storage and copy is not suitable, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.
+9. If the user asks to save a Baidu result into their own drive, run `scripts/baidu-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script. Use `BAIDU_DEFAULT_SAVE_PATH` when the user does not specify a save folder.
+10. If the user asks whether the saved cloud-drive resource appears in OpenList, call `POST /api/fs/list` with `refresh: true` every time, then report whether the Agent-approved resource name was found.
+11. If the user asks to back up into a NAS/SMB OpenList storage, state the source path, exact object name, target backup directory, and final naming before execution; then use `POST /api/fs/copy`, poll copy task status, and verify the destination with `refresh: true`. Use `OPENLIST_DEFAULT_COPY_DST_PATH` when the user does not specify a target.
+12. If the user asks to download into NAS/server storage and copy is not suitable, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.
