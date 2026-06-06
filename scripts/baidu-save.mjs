@@ -354,9 +354,24 @@ function parseBaiduShareUrl(value) {
 
 function extractBaiduShareContextFromHtml(html) {
   const text = String(html || "");
+  const mergedContext = mergeBaiduShareContexts([
+    extractYunDataContext(text),
+    extractLocalsMsetContext(text),
+    extractJsonLoginContext(text)
+  ]);
+  if (mergedContext.shareId && mergedContext.shareUk) return mergedContext;
+
+  if (!/["']?loginstate["']?\s*:|window\.yunData|locals\.mset/.test(text)) {
+    throw new Error("百度分享页中没有找到 loginstate 数据。");
+  }
+
+  throw new Error("无法解析百度分享页中的分享上下文。");
+}
+
+function extractJsonLoginContext(text) {
   const markerIndex = text.search(/["']?loginstate["']?\s*:/);
   if (markerIndex === -1) {
-    throw new Error("百度分享页中没有找到 loginstate 数据。");
+    return null;
   }
 
   for (let start = text.lastIndexOf("{", markerIndex); start >= 0; start = text.lastIndexOf("{", start - 1)) {
@@ -371,7 +386,69 @@ function extractBaiduShareContextFromHtml(html) {
     }
   }
 
-  throw new Error("无法解析百度分享页中的分享上下文。");
+  return null;
+}
+
+function extractYunDataContext(text) {
+  const match = String(text || "").match(/window\.yunData\s*=\s*\{([\s\S]*?)\};/);
+  if (!match) return null;
+  return {
+    bdstoken: extractJsObjectProperty(match[1], "bdstoken"),
+    shareId: extractJsObjectProperty(match[1], "shareid"),
+    shareUk: extractJsObjectProperty(match[1], "share_uk"),
+    files: []
+  };
+}
+
+function extractLocalsMsetContext(text) {
+  let searchIndex = 0;
+  while (searchIndex < text.length) {
+    const markerIndex = text.indexOf("locals.mset", searchIndex);
+    if (markerIndex === -1) return null;
+    const start = text.indexOf("{", markerIndex);
+    if (start === -1) return null;
+    const jsonText = extractBalancedJson(text, start);
+    searchIndex = start + 1;
+    if (!jsonText) continue;
+    try {
+      return normalizeBaiduShareContext(JSON.parse(jsonText));
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function extractJsObjectProperty(body, key) {
+  const pattern = new RegExp(`(?:^|,)\\s*${escapeRegExp(key)}\\s*:\\s*(?:"([^"]*)"|'([^']*)'|([^,}]+))`, "s");
+  const match = String(body || "").match(pattern);
+  if (!match) return "";
+  return String(match[1] ?? match[2] ?? match[3] ?? "").trim();
+}
+
+function mergeBaiduShareContexts(contexts) {
+  const merged = {
+    bdstoken: "",
+    shareId: "",
+    shareUk: "",
+    title: "",
+    rootPath: "",
+    files: []
+  };
+
+  for (const context of contexts) {
+    if (!context) continue;
+    if (!merged.bdstoken && context.bdstoken) merged.bdstoken = context.bdstoken;
+    if (!merged.shareId && context.shareId) merged.shareId = context.shareId;
+    if (!merged.shareUk && context.shareUk) merged.shareUk = context.shareUk;
+    if (!merged.title && context.title) merged.title = context.title;
+    if (!merged.rootPath && context.rootPath) merged.rootPath = context.rootPath;
+    if (merged.files.length === 0 && Array.isArray(context.files) && context.files.length > 0) {
+      merged.files = context.files;
+    }
+  }
+
+  return merged;
 }
 
 function extractBalancedJson(text, startIndex) {
@@ -966,6 +1043,10 @@ function parseJson(value, label) {
 
 function stringOrEmpty(value) {
   return value === undefined || value === null ? "" : String(value);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function formatBytes(bytes) {

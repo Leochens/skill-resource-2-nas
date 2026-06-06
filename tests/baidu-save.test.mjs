@@ -56,6 +56,20 @@ window.yunData.setData({"loginstate":1,"bdstoken":"bd-token","shareid":12345,"sh
   assert.equal(context.files[0].fs_id, 111);
 });
 
+test("extractBaiduShareContextFromHtml supports current yunData and locals.mset page shape", () => {
+  const context = extractBaiduShareContextFromHtml(`
+<script>
+window.yunData={skinName:'white', neglect:1, bdstoken:'bd-token', uk:'4267601248', loginstate:'1', share_uk:"987654321", shareid:"12345678901"};
+locals.mset({"bdstoken":"bd-token","share_uk":"987654321","shareid":12345678901,"file_list":[{"fs_id":756464633449793,"server_filename":"暗影蜘蛛","isdir":1,"size":0,"server_mtime":1779892650}]});
+</script>
+`);
+
+  assert.equal(context.bdstoken, "bd-token");
+  assert.equal(context.shareId, "12345678901");
+  assert.equal(context.shareUk, "987654321");
+  assert.equal(context.files[0].server_filename, "暗影蜘蛛");
+});
+
 test("normalizeBaiduShareItems maps share rows into confirmable resources", () => {
   const items = normalizeBaiduShareItems([
     {
