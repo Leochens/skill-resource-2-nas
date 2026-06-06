@@ -1,10 +1,10 @@
-# Movie Search and Download Skill
+# Resource 2 NAS Skill
 
-Codex skill for searching movie and TV resources through PanSou, returning ranked cloud-disk links, and helping users save Quark or Baidu share links into their own cloud drives. It also documents an OpenList/NAS copy flow for backing saved resources up to mounted storage.
+Codex skill for searching movie and TV resources through PanSou, returning ranked Baidu/Quark cloud-disk links, and helping users save Quark or Baidu share links into their own cloud drives. It also documents an OpenList/NAS copy flow for backing saved resources up to mounted storage.
 
 ## Features
 
-- Search PanSou and return the top ranked resource links as Markdown or JSON.
+- Search PanSou and return the top 50 ranked Baidu/Quark resource links as Markdown or JSON by default.
 - Preserve concrete download links, extraction codes, provider names, source notes, and timestamps.
 - Preview Quark and Baidu share contents before saving.
 - Save Quark shares to a configured Quark folder.
@@ -97,6 +97,7 @@ agents/              Agent metadata
 scripts/             CLI helpers for search, env checks, Quark save, and Baidu save
 tests/               Node test suite
 SKILL.md             Main skill instructions
+SUBAGENT.md          Sub-agent runbook for OpenClaw, Hermes, and similar agents
 .env.example         Safe configuration template
 ```
 

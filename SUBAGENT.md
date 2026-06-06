@@ -7,6 +7,7 @@ Use this file when OpenClaw, Hermes, or another sub Agent is delegated a media s
 - Never print, persist, or commit `QUARK_COOKIE`, `BAIDU_COOKIE`, `OPENLIST_TOKEN`, raw cookies, or raw auth headers.
 - Do not use `--yes` until the user or supervising Agent has confirmed the preview payload, unless the task explicitly includes `confirmed: true`.
 - Prefer `--format json` or `--json` for every script call that supports it. Do not parse Markdown when JSON is available.
+- Search defaults to Baidu Netdisk and Quark Netdisk with a 50-result candidate cap. Only broaden `--cloud-types` when the user asks for other providers.
 - In JSON mode, use `--dry-run` for preview or `--yes` for confirmed save. Do not invoke interactive save prompts in JSON mode.
 - For cloud saves, always run a preview first, classify the resource, and produce a confirmation payload before mutation.
 - A Baidu path like `/NAS资源下载` is still a Baidu cloud-drive path. It is not a NAS copy unless OpenList `fs/copy` is executed after the cloud save.
@@ -15,7 +16,7 @@ Use this file when OpenClaw, Hermes, or another sub Agent is delegated a media s
 
 | User intent | First command | Mutating command |
 | --- | --- | --- |
-| Search title | `node scripts/search-rrdynb.mjs "$KW" --format json --max-candidates 20` | none |
+| Search title | `node scripts/search-rrdynb.mjs "$KW" --format json --max-candidates 50` | none |
 | Check install config | `npm run check-env -- --json` | none |
 | Save Quark share | `node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" --dry-run --json` | Same command with `--yes --json` after confirmation |
 | Save Baidu share | `node scripts/baidu-save.mjs "$SHARE_URL" "$DEST_PATH_OR_URL" --dry-run --json` | Same command with `--yes --json` after confirmation |

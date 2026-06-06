@@ -1,6 +1,6 @@
 interface:
-  display_name: "Movie Resource Search"
-  short_description: "Search media titles, return PanSou links, and save Quark or Baidu shares into the user's cloud drive"
-  default_prompt: "Use $movie-search-and-download for media search, Quark/Baidu cloud saves, OpenList verification, and NAS/SMB copies. For delegated sub-agent work, read SUBAGENT.md and prefer --format json. Search returns the top 20 ranked links by default. Before any save/copy, run npm run check-env on fresh installs. Cloud saves must follow preview -> confirmation -> --yes save; pass Agent-decided --context-name and --resource-type. Before OpenList fs/copy, report source, exact object, destination, and final naming, then poll and verify with refresh:true. Never print or persist Cookies/Tokens."
+  display_name: "Resource 2 NAS"
+  short_description: "Search media resources, save Quark or Baidu shares, and copy saved resources to OpenList/NAS storage"
+  default_prompt: "Use $resource-2-nas for media search, Quark/Baidu cloud saves, OpenList verification, and NAS/SMB copies. For delegated sub-agent work, read SUBAGENT.md and prefer --format json. Search defaults to Baidu/Quark and returns the top 50 ranked links after filtering. Before any save/copy, run npm run check-env on fresh installs. Cloud saves must follow preview -> confirmation -> --yes save; pass Agent-decided --context-name and --resource-type. Before OpenList fs/copy, report source, exact object, destination, and final naming, then poll and verify with refresh:true. Never print or persist Cookies/Tokens."
 policy:
   allow_implicit_invocation: true

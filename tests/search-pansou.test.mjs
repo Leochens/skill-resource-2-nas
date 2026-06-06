@@ -5,8 +5,17 @@ import {
   buildSearchQueryParams,
   normalizeCheckLinksResponse,
   normalizePanSouSearchResponse,
+  parseArgs,
   renderMarkdownTable
 } from "../scripts/search-rrdynb.mjs";
+
+test("parseArgs defaults search to Baidu and Quark with a 50 candidate cap", () => {
+  const args = parseArgs(["蜘蛛侠"]);
+
+  assert.equal(args.title, "蜘蛛侠");
+  assert.equal(args.maxCandidates, 50);
+  assert.deepEqual(args.cloudTypes, ["baidu", "quark"]);
+});
 
 test("buildSearchQueryParams serializes PanSou GET parameters", () => {
   const params = buildSearchQueryParams({
@@ -33,6 +42,26 @@ test("buildSearchQueryParams serializes PanSou GET parameters", () => {
   assert.equal(params.get("conc"), "12");
   assert.equal(params.get("filter"), JSON.stringify({ include: ["合集", "4K"], exclude: ["预告"] }));
   assert.equal(params.get("ext"), JSON.stringify({ title_en: "Spider-Man" }));
+});
+
+test("normalizePanSouSearchResponse defaults to Baidu and Quark results only", () => {
+  const normalized = normalizePanSouSearchResponse(
+    {
+      data: {
+        total: 4,
+        merged_by_type: {
+          aliyun: [{ url: "https://www.aliyundrive.com/s/aliyun-id", note: "阿里结果" }],
+          baidu: [{ url: "https://pan.baidu.com/s/baidu-id?pwd=8888", password: "8888", note: "百度结果" }],
+          magnet: [{ url: "magnet:?xt=urn:btih:example", note: "磁力结果" }],
+          quark: [{ url: "https://pan.quark.cn/s/quark-id", note: "夸克结果" }]
+        }
+      }
+    },
+    { title: "蜘蛛侠" }
+  );
+
+  assert.equal(normalized.returnedCount, 2);
+  assert.deepEqual(normalized.candidates.map((candidate) => candidate.diskType), ["baidu", "quark"]);
 });
 
 test("normalizePanSouSearchResponse converts merged_by_type into candidates and downloadLinks", () => {

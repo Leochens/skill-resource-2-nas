@@ -4,10 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_API_BASE = "https://so.252035.xyz/api";
-const DEFAULT_MAX_CANDIDATES = 20;
+const DEFAULT_MAX_CANDIDATES = 50;
 const DEFAULT_RESULT_TYPE = "all";
 const DEFAULT_SOURCE_TYPE = "all";
 const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_CLOUD_TYPES = ["baidu", "quark"];
 
 const PROVIDER_LABELS = {
   baidu: "百度网盘",
@@ -61,7 +62,7 @@ function parseArgs(argv) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     channels: [],
     plugins: [],
-    cloudTypes: [],
+    cloudTypes: [...DEFAULT_CLOUD_TYPES],
     include: [],
     exclude: [],
     ext: null,
@@ -132,12 +133,12 @@ function printUsage() {
   console.error("Usage: node scripts/search-rrdynb.mjs <title> [options]");
   console.error("Options:");
   console.error("  --api-base https://so.252035.xyz/api");
-  console.error("  --max-candidates 20");
+  console.error("  --max-candidates 50");
   console.error("  --res all|merge|results");
   console.error("  --src all|tg|plugin");
   console.error("  --channels tgsearchers4,Aliyun_4K_Movies");
   console.error("  --plugins wanou,zhizhen");
-  console.error("  --cloud-types quark,baidu,aliyun,xunlei,magnet,ed2k");
+  console.error("  --cloud-types baidu,quark");
   console.error("  --include 4K,合集 --exclude 预告");
   console.error("  --refresh");
   console.error("  --check-links [--proxy-url socks5://127.0.0.1:1080]");
@@ -206,7 +207,8 @@ function normalizePanSouSearchResponse(response, options = {}) {
   const rankedLinks = data.results && data.results.length > 0 ? flattenResultsLinks(data.results) : [];
   const mergedByType = data.merged_by_type || groupResultsByType(data.results || []);
   const rawLinks = rankedLinks.length > 0 ? rankedLinks : flattenMergedLinks(mergedByType);
-  const allLinks = filterLinksByCloudTypes(rawLinks, options.cloudTypes);
+  const cloudTypes = Array.isArray(options.cloudTypes) ? options.cloudTypes : DEFAULT_CLOUD_TYPES;
+  const allLinks = filterLinksByCloudTypes(rawLinks, cloudTypes);
   const limit = Number.isFinite(options.maxCandidates) ? options.maxCandidates : DEFAULT_MAX_CANDIDATES;
   const downloadLinks = allLinks.slice(0, limit).map((link, index) => normalizeDownloadLink(link, index + 1));
   const candidates = downloadLinks.map((link) => ({
@@ -565,5 +567,6 @@ export {
   formatSearchResult,
   normalizeCheckLinksResponse,
   normalizePanSouSearchResponse,
+  parseArgs,
   renderMarkdownTable
 };

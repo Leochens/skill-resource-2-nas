@@ -1,9 +1,9 @@
 ---
-name: movie-search-and-download
-description: Use when a user asks to search for a movie, TV title, animation, or other media resource through PanSou, then report structured title/resource notes plus concrete cloud-disk links, extraction codes, and optional link-check status.
+name: resource-2-nas
+description: Use when a user asks to search for movie, TV, animation, or other media resources, save Quark or Baidu shares into cloud drive, verify through OpenList, or copy saved resources to NAS/SMB storage.
 ---
 
-# Movie Search and Resource Links
+# Resource 2 NAS
 
 Use this skill when the user asks to search for a movie/TV/media title or asks for download/resource links. The default upstream is the PanSou instance at `https://so.252035.xyz/`, backed by the `fish2018/pansou` API.
 
@@ -15,7 +15,7 @@ For OpenClaw, Hermes, or any delegated sub Agent, read `SUBAGENT.md` first. Sub 
 
 | Task | Sub-Agent command |
 | --- | --- |
-| Search | `node scripts/search-rrdynb.mjs "$KW" --format json --max-candidates 20` |
+| Search | `node scripts/search-rrdynb.mjs "$KW" --format json --max-candidates 50` |
 | ENV check | `npm run check-env -- --json` |
 | Quark preview | `node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" --dry-run --format json` |
 | Baidu preview | `node scripts/baidu-save.mjs "$SHARE_URL" "$DEST_PATH_OR_URL" --dry-run --format json` |
@@ -82,7 +82,7 @@ For ordinary user searches, use:
 node scripts/search-rrdynb.mjs "蜘蛛侠"
 ```
 
-Default behavior: return a Markdown table with only the top 20 PanSou-ranked results. Do not show hundreds of raw upstream matches to the user unless they explicitly ask for a larger export. For programmatic JSON output, use `--format json` or `--json`.
+Default behavior: search Baidu Netdisk and Quark Netdisk results first, then return a Markdown table with only the top 50 PanSou-ranked results after local disk-type filtering. Do not show hundreds of raw upstream matches to the user unless they explicitly ask for a larger export. For programmatic JSON output, use `--format json` or `--json`.
 
 The helper calls `GET /api/search` with these parameters:
 
@@ -107,10 +107,10 @@ Useful helper options:
 
 ```bash
 node scripts/search-rrdynb.mjs "蜘蛛侠" \
-  --cloud-types quark,baidu,aliyun,xunlei,magnet,ed2k \
+  --cloud-types baidu,quark \
   --res all \
   --src all \
-  --max-candidates 20
+  --max-candidates 50
 ```
 
 - `--channels tgsearchers4,Aliyun_4K_Movies`
@@ -153,7 +153,7 @@ The helper normalizes this into:
 - `candidates[]`: ranked resource rows, each with one `downloadLinks[]` entry.
 - `downloadLinks[]`: flat list containing `provider`, `diskType`, `url`, `extractionCode`, `note`, `datetime`, and `source`.
 - `availableTotal`: upstream total count, for reference only.
-- `returnedCount` / `total`: number of results actually returned to the user, capped by `--max-candidates` and defaulting to 20.
+- `returnedCount` / `total`: number of results actually returned to the user, capped by `--max-candidates` and defaulting to 50.
 - `providerCounts`: counts by disk type among returned results only.
 
 ## User-Facing Table
@@ -171,7 +171,7 @@ Rules:
 - The table is the primary answer. Do not provide only a summary when links are available.
 - Use `[打开](url)` for the link cell.
 - Use `-` when extraction code, source, or datetime is absent.
-- Keep the table to the returned top 20 by default.
+- Keep the table to the returned top 50 by default.
 - Put a short line above the table: `按 PanSou 相关度排序，返回前 N 条。上游可用结果约 M 条。`
 
 ## Link Check Parameters
