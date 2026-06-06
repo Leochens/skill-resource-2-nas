@@ -9,6 +9,18 @@ Use this skill when the user asks to search for a movie/TV/media title or asks f
 
 Use `scripts/quark-save.mjs` when the user wants to save a Quark share link into their own Quark cloud drive folder. Use `scripts/baidu-save.mjs` when the user wants to save a Baidu Netdisk share link into their own Baidu cloud drive path. These workflows transfer the resource into the user's cloud drive only; they do not download files to the local filesystem.
 
+For OpenClaw, Hermes, or any delegated sub Agent, read `SUBAGENT.md` first. Sub Agents should prefer `--format json`, follow the preview-confirm-save protocol, and never parse Markdown when a JSON result is available.
+
+## Sub-Agent Quick Start
+
+| Task | Sub-Agent command |
+| --- | --- |
+| Search | `node scripts/search-rrdynb.mjs "$KW" --format json --max-candidates 20` |
+| ENV check | `npm run check-env -- --json` |
+| Quark preview | `node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" --dry-run --format json` |
+| Baidu preview | `node scripts/baidu-save.mjs "$SHARE_URL" "$DEST_PATH_OR_URL" --dry-run --format json` |
+| Confirmed save | Re-run the preview command with `--yes --format json` after user/supervisor confirmation. |
+
 ## First-Time ENV Setup
 
 Before editing `.env`, point the user to the setup guide if they need help collecting Cookies, OpenList tokens, or save/copy paths: https://guantou.site/archives/N2CmhISt
@@ -242,6 +254,7 @@ Useful options:
 - `--select all|1,3|2-5`: choose which rows to save.
 - `--yes`: skip the confirmation prompt and save the selected rows immediately.
 - `--dry-run`: preview only; no Cookie needed and no save happens.
+- `--format json` / `--json`: output a single structured JSON object for sub Agents.
 - `--no-rename`: save without post-save rename.
 - `--resource-type auto|series|movie|collection`: pass the Agent's resource classification.
 - `--rename-plan-json '[{"rank":1,"name":"...","reason":"..."}]'`: pass Agent-decided final names. `rank` refers to the row number in the preview table.
@@ -316,6 +329,7 @@ Useful options:
 - `--select all|1,3|2-5`: choose which rows to save.
 - `--yes`: skip the confirmation prompt and save the selected rows immediately.
 - `--dry-run`: preview only; no save happens.
+- `--format json` / `--json`: output a single structured JSON object for sub Agents.
 - `--no-rename`: save without post-save rename.
 - `--passcode 8888`: provide a Baidu extraction code if the URL does not include `pwd`.
 - `--resource-type auto|series|movie|collection`: pass the Agent's resource classification.

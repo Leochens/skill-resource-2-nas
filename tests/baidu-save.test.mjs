@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   applyEnvDefaults,
+  buildBaiduSubagentPreview,
   buildBaiduTransferRequest,
   extractBaiduShareContextFromHtml,
   normalizeBaiduShareItems,
@@ -201,4 +202,44 @@ test("renderBaiduShareItemsTable outputs a confirmation table", () => {
   assert.match(markdown, /目标目录：\/我的资源\/影视/);
   assert.match(markdown, /资源类型：电影\/合集/);
   assert.match(markdown, /\| 1 \| 文件 \| 蜘蛛侠\.mkv \| 1 KB \| 2024-03-09 \|/);
+});
+
+test("buildBaiduSubagentPreview creates structured confirmation payload", () => {
+  const items = normalizeBaiduShareItems([
+    {
+      fs_id: 111,
+      server_filename: "暗影蜘蛛",
+      isdir: 1,
+      size: 0,
+      server_mtime: 1710000000
+    }
+  ]);
+  const payload = buildBaiduSubagentPreview({
+    args: {
+      shareUrl: "https://pan.baidu.com/s/1abcDEF?pwd=8888",
+      savePath: "/NAS资源下载",
+      dryRun: true
+    },
+    result: {
+      shareTitle: "暗影蜘蛛",
+      contextName: "暗影蜘蛛",
+      savePath: "/NAS资源下载",
+      classification: {
+        type: "collection",
+        isSeries: false,
+        label: "合集",
+        reason: "Agent 根据上下文判定为合集"
+      },
+      items,
+      selectedPreview: items,
+      renamePlan: []
+    }
+  });
+
+  assert.equal(payload.provider, "baidu");
+  assert.equal(payload.mode, "preview");
+  assert.equal(payload.nextAction, "confirm_before_save");
+  assert.equal(payload.confirmation.source, "https://pan.baidu.com/s/1abcDEF?pwd=8888");
+  assert.equal(payload.confirmation.target.pathOrUrl, "/NAS资源下载");
+  assert.equal(payload.confirmation.selectedItems[0].name, "暗影蜘蛛");
 });

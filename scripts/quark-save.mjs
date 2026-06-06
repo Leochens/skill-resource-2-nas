@@ -32,20 +32,32 @@ async function main() {
   }
 
   const result = await prepareQuarkSave(args);
-  console.log(renderShareItemsTable(result));
+  const jsonOutput = args.format === "json";
 
   if (args.dryRun) {
-    console.log("\n--dry-run 已启用：只预览资源和重命名建议，不会调用转存接口。");
+    if (jsonOutput) {
+      console.log(JSON.stringify(buildQuarkSubagentPreview({ args, result }), null, 2));
+    } else {
+      console.log(renderShareItemsTable(result));
+      console.log("\n--dry-run 已启用：只预览资源和重命名建议，不会调用转存接口。");
+    }
     return;
+  }
+
+  if (!jsonOutput) {
+    console.log(renderShareItemsTable(result));
   }
 
   const cookie = resolveCookie(args);
   if (!cookie) {
     throw new Error(`缺少夸克 Cookie。请设置 ${args.cookieEnv} 环境变量，或使用 --cookie-env 指向你的 Cookie 环境变量。`);
   }
+  if (jsonOutput && !args.yes) {
+    throw new Error("--format json 保存模式必须在用户确认后搭配 --yes 使用；预览请使用 --dry-run。");
+  }
 
   const selectedItems = args.yes
-    ? result.items
+    ? result.selectedPreview
     : await askUserSelection(result.items, args.defaultSelection);
 
   if (selectedItems.length === 0) {
@@ -63,7 +75,11 @@ async function main() {
     selectedItems
   });
 
-  console.log(renderSaveSummary(saveResult));
+  if (jsonOutput) {
+    console.log(JSON.stringify(buildQuarkSubagentSave({ args, result, saveResult }), null, 2));
+  } else {
+    console.log(renderSaveSummary(saveResult));
+  }
 }
 
 function parseArgs(argv) {
@@ -112,6 +128,8 @@ function parseArgs(argv) {
       parsed.dryRun = true;
     } else if (arg === "--no-rename") {
       parsed.noRename = true;
+    } else if (arg === "--json") {
+      parsed.format = "json";
     } else if (arg === "--format") {
       parsed.format = argv[++index] || "markdown";
     } else if (arg.startsWith("--")) {
@@ -636,6 +654,121 @@ function renderSaveSummary(saveResult) {
   return lines.join("\n");
 }
 
+function buildQuarkSubagentPreview({ args = {}, result }) {
+  const selectedItems = result.selectedPreview || parseSelection(result.defaultSelection || args.defaultSelection || "all", result.items || []);
+  return {
+    ok: true,
+    provider: "quark",
+    mode: "preview",
+    nextAction: "confirm_before_save",
+    source: {
+      shareUrl: args.shareUrl || "",
+      shareId: result.share?.pwdId || "",
+      passcodePresent: Boolean(result.share?.passcode)
+    },
+    target: {
+      provider: "quark",
+      pathOrUrl: args.toUrl || "",
+      fid: result.destination?.fid || "",
+      name: result.destination?.name || ""
+    },
+    resource: {
+      shareTitle: result.shareTitle || "",
+      canonicalName: result.contextName || "",
+      type: result.classification?.type || "unknown",
+      label: result.classification?.label || "",
+      isSeries: Boolean(result.classification?.isSeries),
+      reason: result.classification?.reason || ""
+    },
+    selection: {
+      defaultSelection: result.defaultSelection || args.defaultSelection || "all",
+      selectedRanks: selectedItems.map((item) => item.rank),
+      selectedItems: selectedItems.map(serializeQuarkItem)
+    },
+    items: (result.items || []).map(serializeQuarkItem),
+    renamePlan: serializeRenamePlan(result.renamePlan || []),
+    confirmation: {
+      source: args.shareUrl || "",
+      selectedItems: selectedItems.map(serializeQuarkItem),
+      target: {
+        provider: "quark",
+        pathOrUrl: args.toUrl || "",
+        name: result.destination?.name || ""
+      },
+      finalNaming: serializeRenamePlan(result.renamePlan || []),
+      commandHint: "Re-run scripts/quark-save.mjs with --yes after the user confirms this payload."
+    }
+  };
+}
+
+function buildQuarkSubagentSave({ args = {}, result, saveResult }) {
+  return {
+    ok: true,
+    provider: "quark",
+    mode: "save",
+    nextAction: "verify_in_openlist_or_report_saved",
+    source: {
+      shareUrl: args.shareUrl || "",
+      shareId: result.share?.pwdId || "",
+      passcodePresent: Boolean(result.share?.passcode)
+    },
+    target: {
+      provider: "quark",
+      pathOrUrl: args.toUrl || "",
+      fid: result.destination?.fid || "",
+      name: result.destination?.name || ""
+    },
+    resource: {
+      shareTitle: result.shareTitle || "",
+      canonicalName: result.contextName || "",
+      type: result.classification?.type || "unknown",
+      label: result.classification?.label || "",
+      isSeries: Boolean(result.classification?.isSeries),
+      reason: result.classification?.reason || ""
+    },
+    selectedItems: (saveResult.selectedItems || []).map(serializeQuarkItem),
+    taskId: saveResult.taskId || "",
+    savedFids: saveResult.savedFids || [],
+    renamePlan: serializeRenamePlan(saveResult.renamePlan || []),
+    renameResults: serializeRenameResults(saveResult.renameResults || [])
+  };
+}
+
+function serializeQuarkItem(item) {
+  return {
+    rank: item.rank,
+    id: item.fid,
+    name: item.name,
+    typeLabel: item.typeLabel,
+    isDir: item.isDir,
+    size: item.size,
+    sizeLabel: item.sizeLabel,
+    itemCount: item.itemCount,
+    updatedAtLabel: item.updatedAtLabel
+  };
+}
+
+function serializeRenamePlan(plan) {
+  return (plan || []).map((item, index) => ({
+    rank: index + 1,
+    id: item.fid || item.sourcePath || "",
+    originalName: item.originalName,
+    suggestedName: item.suggestedName,
+    reason: item.reason
+  }));
+}
+
+function serializeRenameResults(results) {
+  return (results || []).map((item) => ({
+    ok: Boolean(item.ok),
+    id: item.fid || item.sourcePath || "",
+    originalName: item.originalName,
+    suggestedName: item.suggestedName,
+    reason: item.reason,
+    error: item.error || ""
+  }));
+}
+
 async function askUserSelection(items, defaultSelection) {
   const rl = readline.createInterface({ input, output });
   try {
@@ -850,6 +983,8 @@ function isCliEntryPoint() {
 
 export {
   applyEnvDefaults,
+  buildQuarkSubagentPreview,
+  buildQuarkSubagentSave,
   buildRenamePlan,
   buildSavePayload,
   classifyResource,

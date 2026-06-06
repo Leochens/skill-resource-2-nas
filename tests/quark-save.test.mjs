@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   applyEnvDefaults,
+  buildQuarkSubagentPreview,
   buildSavePayload,
   buildRenamePlan,
   classifyResource,
@@ -176,6 +177,42 @@ test("renderShareItemsTable outputs a confirmation table", () => {
   assert.match(markdown, /目标目录：来自：分享/);
   assert.match(markdown, /资源类型：电影\/合集/);
   assert.match(markdown, /\| 1 \| 文件 \| 蜘蛛侠\.mkv \| 1 KB \| 2024-03-09 \|/);
+});
+
+test("buildQuarkSubagentPreview creates structured confirmation payload", () => {
+  const items = normalizeShareItems([
+    {
+      fid: "file-fid",
+      share_fid_token: "file-token",
+      file_name: "蜘蛛侠.mkv",
+      size: 1024,
+      dir: false,
+      updated_at: 1710000000000
+    }
+  ]);
+  const payload = buildQuarkSubagentPreview({
+    args: {
+      shareUrl: "https://pan.quark.cn/s/example",
+      toUrl: "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E5%A4%87%E4%BB%BD",
+      dryRun: true
+    },
+    result: {
+      shareTitle: "蜘蛛侠合集",
+      contextName: "蜘蛛侠合集",
+      destination: { fid: "dest-fid", name: "备份" },
+      classification: classifyResource({ resourceType: "collection", contextName: "蜘蛛侠合集", items }),
+      items,
+      selectedPreview: items,
+      renamePlan: []
+    }
+  });
+
+  assert.equal(payload.provider, "quark");
+  assert.equal(payload.mode, "preview");
+  assert.equal(payload.nextAction, "confirm_before_save");
+  assert.equal(payload.confirmation.source, "https://pan.quark.cn/s/example");
+  assert.equal(payload.confirmation.target.pathOrUrl, "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E5%A4%87%E4%BB%BD");
+  assert.equal(payload.confirmation.selectedItems[0].name, "蜘蛛侠.mkv");
 });
 
 test("classifyResource detects series from context and item names", () => {

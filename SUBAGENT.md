@@ -1,0 +1,131 @@
+# Sub-Agent Runbook
+
+Use this file when OpenClaw, Hermes, or another sub Agent is delegated a media search, cloud save, or NAS/OpenList copy task.
+
+## Hard Rules
+
+- Never print, persist, or commit `QUARK_COOKIE`, `BAIDU_COOKIE`, `OPENLIST_TOKEN`, raw cookies, or raw auth headers.
+- Do not use `--yes` until the user or supervising Agent has confirmed the preview payload, unless the task explicitly includes `confirmed: true`.
+- Prefer `--format json` or `--json` for every script call that supports it. Do not parse Markdown when JSON is available.
+- In JSON mode, use `--dry-run` for preview or `--yes` for confirmed save. Do not invoke interactive save prompts in JSON mode.
+- For cloud saves, always run a preview first, classify the resource, and produce a confirmation payload before mutation.
+- A Baidu path like `/NAS资源下载` is still a Baidu cloud-drive path. It is not a NAS copy unless OpenList `fs/copy` is executed after the cloud save.
+
+## Decision Table
+
+| User intent | First command | Mutating command |
+| --- | --- | --- |
+| Search title | `node scripts/search-rrdynb.mjs "$KW" --format json --max-candidates 20` | none |
+| Check install config | `npm run check-env -- --json` | none |
+| Save Quark share | `node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" --dry-run --json` | Same command with `--yes --json` after confirmation |
+| Save Baidu share | `node scripts/baidu-save.mjs "$SHARE_URL" "$DEST_PATH_OR_URL" --dry-run --json` | Same command with `--yes --json` after confirmation |
+| Copy saved resource to NAS/OpenList | `POST /api/fs/list` on source and target with `refresh:true` | `POST /api/fs/copy`, then poll copy task and verify target |
+
+## JSON Preview Contract
+
+The Quark and Baidu preview commands return one JSON object:
+
+```json
+{
+  "ok": true,
+  "provider": "baidu",
+  "mode": "preview",
+  "nextAction": "confirm_before_save",
+  "source": {
+    "shareUrl": "https://pan.baidu.com/s/...",
+    "shareId": "..."
+  },
+  "target": {
+    "provider": "baidu",
+    "pathOrUrl": "/NAS资源下载"
+  },
+  "resource": {
+    "shareTitle": "暗影蜘蛛",
+    "canonicalName": "暗影蜘蛛",
+    "type": "collection",
+    "label": "合集",
+    "isSeries": false,
+    "reason": "Agent 根据上下文判定为合集"
+  },
+  "selection": {
+    "defaultSelection": "all",
+    "selectedRanks": [1],
+    "selectedItems": []
+  },
+  "renamePlan": [],
+  "confirmation": {
+    "source": "https://pan.baidu.com/s/...",
+    "selectedItems": [],
+    "target": {
+      "provider": "baidu",
+      "pathOrUrl": "/NAS资源下载"
+    },
+    "finalNaming": [],
+    "commandHint": "Re-run ... with --yes after the user confirms this payload."
+  }
+}
+```
+
+Before any save/copy mutation, report these exact fields to the user or supervising Agent:
+
+- Source: `confirmation.source`
+- Selected items: `confirmation.selectedItems[].name`
+- Target: `confirmation.target.pathOrUrl`
+- Final naming: `confirmation.finalNaming`, or "keep original names" when empty
+- Resource type: `resource.label` and `resource.reason`
+- Next command: the same command with `--yes --format json`
+
+## Save Commands
+
+Quark:
+
+```bash
+node scripts/quark-save.mjs "$SHARE_URL" "$QUARK_DEFAULT_SAVE_URL" \
+  --dry-run \
+  --format json \
+  --context-name "$CANONICAL_NAME" \
+  --resource-type auto
+```
+
+Baidu:
+
+```bash
+node scripts/baidu-save.mjs "$SHARE_URL" "$BAIDU_DEFAULT_SAVE_PATH" \
+  --dry-run \
+  --format json \
+  --context-name "$CANONICAL_NAME" \
+  --resource-type auto \
+  --passcode "$PASSCODE_IF_NEEDED"
+```
+
+After confirmation, replace `--dry-run` with `--yes`.
+
+## Classification Rules
+
+- If item names include `S01E01`, `EP01`, `第1集`, `第一季`, `全12集`, `完结`, `剧集`, or similar, use `--resource-type series` and tell the user it is a series.
+- If a single top-level folder contains variants like `1080p`, `4K`, `SDR`, `彩色版`, `黑白版`, or multiple quality folders, use `--resource-type collection`.
+- If the title is clearly one movie and the selected item is a single video file, use `--resource-type movie`.
+- If uncertain, keep `auto`, but explain the uncertainty and do not invent a canonical title.
+
+## Common Failures
+
+| Symptom | Action |
+| --- | --- |
+| Missing `.env` or missing key | Run `npm run check-env -- --json`, then ask user to follow `https://guantou.site/archives/N2CmhISt`. |
+| Baidu target URL rejected | Ensure it is from `pan.baidu.com` and contains a `path` parameter in the hash or query. |
+| Baidu page parse error | Inspect for `window.yunData` and `locals.mset`, then add a regression test before editing parser code. |
+| Extraction code failure | Ask for the correct code; pass with `--passcode`. |
+| `errno` is not `0` after Baidu save | Report the errno and message; do not claim success. |
+| Quark save returns no `task_id` | Report the API response summary; do not retry blindly. |
+| OpenList copy task fails | Poll the copy task endpoint, report task error, and verify both source and target with `refresh:true`. |
+
+## OpenList Copy Protocol
+
+Before `fs/copy`, state:
+
+- Source directory: OpenList path containing the saved resource.
+- Object: exact `names[]` entry.
+- Destination directory: OpenList NAS/SMB path.
+- Final path/name: expected resulting path.
+
+Then call `fs/copy`, poll `/api/task/copy/info`, and list the destination with `refresh:true` until the copied item appears.

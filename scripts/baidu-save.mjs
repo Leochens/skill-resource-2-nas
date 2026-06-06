@@ -47,11 +47,23 @@ async function main() {
   }
 
   const result = await prepareBaiduSave({ ...args, cookie });
-  console.log(renderBaiduShareItemsTable(result));
+  const jsonOutput = args.format === "json";
 
   if (args.dryRun) {
-    console.log("\n--dry-run 已启用：只预览资源和命名建议，不会调用转存接口。");
+    if (jsonOutput) {
+      console.log(JSON.stringify(buildBaiduSubagentPreview({ args, result }), null, 2));
+    } else {
+      console.log(renderBaiduShareItemsTable(result));
+      console.log("\n--dry-run 已启用：只预览资源和命名建议，不会调用转存接口。");
+    }
     return;
+  }
+
+  if (!jsonOutput) {
+    console.log(renderBaiduShareItemsTable(result));
+  }
+  if (jsonOutput && !args.yes) {
+    throw new Error("--format json 保存模式必须在用户确认后搭配 --yes 使用；预览请使用 --dry-run。");
   }
 
   const selectedItems = args.yes
@@ -76,7 +88,11 @@ async function main() {
     })
   });
 
-  console.log(renderSaveSummary(saveResult));
+  if (jsonOutput) {
+    console.log(JSON.stringify(buildBaiduSubagentSave({ args, result, saveResult }), null, 2));
+  } else {
+    console.log(renderSaveSummary(saveResult));
+  }
 }
 
 function parseArgs(argv) {
@@ -131,6 +147,8 @@ function parseArgs(argv) {
       parsed.dryRun = true;
     } else if (arg === "--no-rename") {
       parsed.noRename = true;
+    } else if (arg === "--json") {
+      parsed.format = "json";
     } else if (arg === "--format") {
       parsed.format = argv[++index] || "markdown";
     } else if (arg.startsWith("--")) {
@@ -688,6 +706,124 @@ function renderSaveSummary(saveResult) {
   return lines.join("\n");
 }
 
+function buildBaiduSubagentPreview({ args = {}, result }) {
+  const selectedItems = result.selectedPreview || parseSelection(result.defaultSelection || args.defaultSelection || "all", result.items || []);
+  return {
+    ok: true,
+    provider: "baidu",
+    mode: "preview",
+    nextAction: "confirm_before_save",
+    source: {
+      shareUrl: args.shareUrl || "",
+      shareId: result.share?.featureStr || "",
+      passcodePresent: Boolean(result.share?.passcode)
+    },
+    target: {
+      provider: "baidu",
+      pathOrUrl: result.savePath || args.savePath || ""
+    },
+    resource: {
+      shareTitle: result.shareTitle || "",
+      canonicalName: result.contextName || "",
+      type: result.classification?.type || "unknown",
+      label: result.classification?.label || "",
+      isSeries: Boolean(result.classification?.isSeries),
+      reason: result.classification?.reason || ""
+    },
+    selection: {
+      defaultSelection: result.defaultSelection || args.defaultSelection || "all",
+      selectedRanks: selectedItems.map((item) => item.rank),
+      selectedItems: selectedItems.map(serializeBaiduItem)
+    },
+    items: (result.items || []).map(serializeBaiduItem),
+    renamePlan: serializeRenamePlan(result.renamePlan || []),
+    confirmation: {
+      source: args.shareUrl || "",
+      selectedItems: selectedItems.map(serializeBaiduItem),
+      target: {
+        provider: "baidu",
+        pathOrUrl: result.savePath || args.savePath || ""
+      },
+      finalNaming: serializeRenamePlan(result.renamePlan || []),
+      commandHint: "Re-run scripts/baidu-save.mjs with --yes after the user confirms this payload."
+    }
+  };
+}
+
+function buildBaiduSubagentSave({ args = {}, result, saveResult }) {
+  return {
+    ok: true,
+    provider: "baidu",
+    mode: "save",
+    nextAction: "verify_target_path_or_openlist",
+    source: {
+      shareUrl: args.shareUrl || "",
+      shareId: result.share?.featureStr || "",
+      passcodePresent: Boolean(result.share?.passcode)
+    },
+    target: {
+      provider: "baidu",
+      pathOrUrl: result.savePath || args.savePath || ""
+    },
+    resource: {
+      shareTitle: result.shareTitle || "",
+      canonicalName: result.contextName || "",
+      type: result.classification?.type || "unknown",
+      label: result.classification?.label || "",
+      isSeries: Boolean(result.classification?.isSeries),
+      reason: result.classification?.reason || ""
+    },
+    selectedItems: (saveResult.selectedItems || []).map(serializeBaiduItem),
+    errno: saveResult.transferResponse?.errno ?? 0,
+    transferResponse: summarizeBaiduTransferResponse(saveResult.transferResponse || {}),
+    renamePlan: serializeRenamePlan(saveResult.renamePlan || []),
+    renameResults: serializeRenameResults(saveResult.renameResults || [])
+  };
+}
+
+function serializeBaiduItem(item) {
+  return {
+    rank: item.rank,
+    id: item.fsId,
+    path: item.path,
+    name: item.name,
+    typeLabel: item.typeLabel,
+    isDir: item.isDir,
+    size: item.size,
+    sizeLabel: item.sizeLabel,
+    updatedAtLabel: item.updatedAtLabel
+  };
+}
+
+function serializeRenamePlan(plan) {
+  return (plan || []).map((item, index) => ({
+    rank: index + 1,
+    id: item.fid || item.sourcePath || "",
+    originalName: item.originalName,
+    suggestedName: item.suggestedName,
+    reason: item.reason
+  }));
+}
+
+function serializeRenameResults(results) {
+  return (results || []).map((item) => ({
+    ok: Boolean(item.ok),
+    id: item.fid || item.sourcePath || "",
+    originalName: item.originalName,
+    suggestedName: item.suggestedName,
+    reason: item.reason,
+    error: item.error || ""
+  }));
+}
+
+function summarizeBaiduTransferResponse(response) {
+  return {
+    errno: response.errno ?? 0,
+    showMsg: response.show_msg || "",
+    taskId: response.task_id || response.taskid || ""
+  };
+}
+
 async function askUserSelection(items, defaultSelection) {
   const rl = readline.createInterface({ input, output });
   try {
@@ -1113,6 +1249,8 @@ function isCliEntryPoint() {
 export {
   applyEnvDefaults,
   buildBaiduRenamePlan,
+  buildBaiduSubagentPreview,
+  buildBaiduSubagentSave,
   buildBaiduTransferRequest,
   extractBaiduShareContextFromHtml,
   normalizeBaiduShareItems,
