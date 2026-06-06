@@ -9,6 +9,41 @@ Use this skill when the user asks to search for a movie/TV/media title or asks f
 
 Use `scripts/quark-save.mjs` when the user wants to save a Quark share link into their own Quark cloud drive folder. This workflow transfers the resource into the user's cloud drive only; it does not download files to the local filesystem.
 
+## First-Time ENV Setup
+
+Before the first operation that needs Quark saving, OpenList verification, or NAS/SMB backup copying, check whether the local `.env` file is configured:
+
+```bash
+npm run check-env
+```
+
+If `.env` is missing, tell the user to copy `.env.example` to `.env` and fill in the required values. Never ask the user to paste secrets into docs or commit them.
+
+Required `.env` values:
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `QUARK_COOKIE` | yes | Quark web Cookie used to save share links into the user's own Quark cloud drive. |
+| `OPENLIST_TOKEN` | yes | Fixed OpenList API token used for `fs/list`, `fs/get`, `fs/copy`, and task APIs. |
+| `OPENLIST_BASE_URL` | yes | OpenList service base URL, e.g. `http://192.168.5.22:5244`. |
+| `QUARK_DEFAULT_SAVE_URL` | yes | Default Quark cloud folder URL where share resources should be saved. |
+| `OPENLIST_DEFAULT_COPY_DST_PATH` | yes | Default OpenList path backed by SMB/NAS storage for backup copies. |
+
+Security rules:
+
+- `.env` contains full credentials. It is ignored by git and must not be committed.
+- Print only masked secret values. `scripts/check-env.mjs` masks `QUARK_COOKIE` and `OPENLIST_TOKEN`.
+- If any value is missing or invalid, stop before saving/copying and explain the specific missing key.
+- `QUARK_DEFAULT_SAVE_URL` must be a full Quark folder URL such as `https://pan.quark.cn/list#/list/all/<fid>-<folder-name>`.
+- `OPENLIST_DEFAULT_COPY_DST_PATH` must be an OpenList path such as `/影视资源备份/影视`, not an OS path such as `/mnt/nas/movies`.
+
+Use these values as defaults:
+
+- When the user provides a Quark share but no save folder, use `QUARK_DEFAULT_SAVE_URL`.
+- When calling OpenList APIs, use `OPENLIST_BASE_URL` and `OPENLIST_TOKEN`.
+- When the user asks to back up/copy a saved resource but does not name a target, use `OPENLIST_DEFAULT_COPY_DST_PATH`.
+- Still tell the user the source path, copied object, target path, and final naming before `fs/copy`.
+
 ## Default Endpoint
 
 - Site: `https://so.252035.xyz/`
@@ -320,13 +355,14 @@ Notes:
 
 ## Workflow
 
-1. Search the exact user keyword first.
-2. If results are thin or off-target, try 1-3 variants: remove book marks, remove spaces/punctuation, include original English title if the user gave one.
-3. Default to `res=all` and `src=all` so the helper can rank by PanSou `results[]` order; use `cloud_types`, `plugins`, `channels`, `include`, or `exclude` only when the user asks or the result set needs narrowing.
-4. Report the best ranked candidates with note/title, provider, source, URL, extraction code, and update time when present.
-5. If the user asks whether links are valid, rerun with `--check-links` or call `/api/check/links` on the visible links and include each state/summary.
-6. If `/api/health` reports `auth_enabled: true`, authenticate first or ask the user for credentials/token.
-7. If the user asks to save a Quark result into their own drive, run `scripts/quark-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script.
-8. If the user asks whether the saved Quark resource appears in OpenList, call `POST /api/fs/list` with `refresh: true` every time, then report whether the Agent-approved resource name was found.
-9. If the user asks to back up into a NAS/SMB OpenList storage, state the source path, exact object name, target backup directory, and final naming before execution; then use `POST /api/fs/copy`, poll copy task status, and verify the destination with `refresh: true`.
-10. If the user asks to download into NAS/server storage and copy is not suitable, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.
+1. For Quark save, OpenList verification, or NAS/SMB copy, run `npm run check-env` first in a fresh install or whenever `.env` may be missing/stale.
+2. Search the exact user keyword first.
+3. If results are thin or off-target, try 1-3 variants: remove book marks, remove spaces/punctuation, include original English title if the user gave one.
+4. Default to `res=all` and `src=all` so the helper can rank by PanSou `results[]` order; use `cloud_types`, `plugins`, `channels`, `include`, or `exclude` only when the user asks or the result set needs narrowing.
+5. Report the best ranked candidates with note/title, provider, source, URL, extraction code, and update time when present.
+6. If the user asks whether links are valid, rerun with `--check-links` or call `/api/check/links` on the visible links and include each state/summary.
+7. If `/api/health` reports `auth_enabled: true`, authenticate first or ask the user for credentials/token.
+8. If the user asks to save a Quark result into their own drive, run `scripts/quark-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script. Use `QUARK_DEFAULT_SAVE_URL` when the user does not specify a save folder.
+9. If the user asks whether the saved Quark resource appears in OpenList, call `POST /api/fs/list` with `refresh: true` every time, then report whether the Agent-approved resource name was found.
+10. If the user asks to back up into a NAS/SMB OpenList storage, state the source path, exact object name, target backup directory, and final naming before execution; then use `POST /api/fs/copy`, poll copy task status, and verify the destination with `refresh: true`. Use `OPENLIST_DEFAULT_COPY_DST_PATH` when the user does not specify a target.
+11. If the user asks to download into NAS/server storage and copy is not suitable, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.

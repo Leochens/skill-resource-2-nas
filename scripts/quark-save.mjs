@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { parseDotEnv } from "./check-env.mjs";
+
 const DEFAULT_API_BASE = "https://drive-pc.quark.cn";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_PAGE_SIZE = 50;
 const DEFAULT_COOKIE_ENV = "QUARK_COOKIE";
+const DEFAULT_ENV_FILE = ".env";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/3.14.2 Chrome/112.0.5615.165 Electron/24.1.3.8 Safari/537.36 Channel/pckk_other_ch";
 
@@ -21,7 +25,7 @@ if (isCliEntryPoint()) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const args = applyEnvDefaults(parseArgs(process.argv.slice(2)));
   if (!args.shareUrl || !args.toUrl) {
     printUsage();
     process.exit(2);
@@ -68,6 +72,7 @@ function parseArgs(argv) {
     toUrl: "",
     contextName: "",
     cookieEnv: DEFAULT_COOKIE_ENV,
+    envFile: DEFAULT_ENV_FILE,
     apiBase: DEFAULT_API_BASE,
     timeoutMs: DEFAULT_TIMEOUT_MS,
     defaultSelection: "all",
@@ -89,6 +94,8 @@ function parseArgs(argv) {
       parsed.contextName = argv[++index] || "";
     } else if (arg === "--cookie-env") {
       parsed.cookieEnv = argv[++index] || DEFAULT_COOKIE_ENV;
+    } else if (arg === "--env-file") {
+      parsed.envFile = argv[++index] || DEFAULT_ENV_FILE;
     } else if (arg === "--api-base") {
       parsed.apiBase = argv[++index] || DEFAULT_API_BASE;
     } else if (arg === "--timeout-ms") {
@@ -123,12 +130,28 @@ function parseArgs(argv) {
   return parsed;
 }
 
+function applyEnvDefaults(args, injectedEnv = null) {
+  const fileEnv = injectedEnv || loadEnvFile(args.envFile);
+  const env = { ...fileEnv, ...process.env };
+  return {
+    ...args,
+    env,
+    toUrl: args.toUrl || env.QUARK_DEFAULT_SAVE_URL || ""
+  };
+}
+
+function loadEnvFile(envFile = DEFAULT_ENV_FILE) {
+  if (!envFile || !fs.existsSync(envFile)) return {};
+  return parseDotEnv(fs.readFileSync(envFile, "utf8"));
+}
+
 function printUsage() {
   console.error("Usage: node scripts/quark-save.mjs <share-url> <destination-folder-url> [options]");
   console.error("Options:");
   console.error("  --context-name \"资源名\"       用上下文资源名修正保存后的文件名");
   console.error("  --resource-type auto|series|movie|collection");
   console.error("  --rename-plan-json '[{\"rank\":1,\"name\":\"修正名\",\"reason\":\"Agent 判断\"}]'");
+  console.error("  --env-file .env                从 ENV 文件读取默认保存目录和 Cookie");
   console.error("  --cookie-env QUARK_COOKIE      从指定环境变量读取夸克 Cookie");
   console.error("  --select all|1,3|2-5           默认选择，交互确认时可覆盖");
   console.error("  --yes                          跳过确认，直接使用 --select");
@@ -778,7 +801,7 @@ function buildMutationQuery() {
 }
 
 function resolveCookie(args) {
-  return (process.env[args.cookieEnv] || "").trim();
+  return (args.env?.[args.cookieEnv] || process.env[args.cookieEnv] || "").trim();
 }
 
 function normalizeApiBase(value) {
@@ -826,6 +849,7 @@ function isCliEntryPoint() {
 }
 
 export {
+  applyEnvDefaults,
   buildRenamePlan,
   buildSavePayload,
   classifyResource,

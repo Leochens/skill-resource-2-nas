@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyEnvDefaults,
   buildSavePayload,
   buildRenamePlan,
   classifyResource,
@@ -43,6 +44,27 @@ test("parseQuarkFolderUrl extracts destination fid and decoded name", () => {
       name: "来自：分享"
     }
   );
+});
+
+test("applyEnvDefaults uses configured default Quark save URL", () => {
+  const args = applyEnvDefaults(
+    {
+      shareUrl: "https://pan.quark.cn/s/example",
+      toUrl: "",
+      cookieEnv: "QUARK_COOKIE"
+    },
+    {
+      QUARK_COOKIE: "cookie-value",
+      QUARK_DEFAULT_SAVE_URL:
+        "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E6%9D%A5%E8%87%AA%EF%BC%9A%E5%88%86%E4%BA%AB"
+    }
+  );
+
+  assert.equal(
+    args.toUrl,
+    "https://pan.quark.cn/list#/list/all/e38b48835b404f8092b2a7e5cc054b0d-%E6%9D%A5%E8%87%AA%EF%BC%9A%E5%88%86%E4%BA%AB"
+  );
+  assert.equal(args.env.QUARK_COOKIE, "cookie-value");
 });
 
 test("normalizeShareItems maps Quark detail rows into confirmable resources", () => {
