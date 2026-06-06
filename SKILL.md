@@ -213,6 +213,77 @@ Quark API flow used by the helper:
 - `GET /1/clouddrive/task`: poll the async save task until completion.
 - `POST /1/clouddrive/file/rename`: apply the Agent-approved rename plan to saved top-level files/folders.
 
+## OpenList Verification and NAS Download
+
+Use OpenList when the user wants to verify that a just-saved Quark resource is visible through their NAS/OpenList mount, or when they want to download a mounted resource through OpenList APIs.
+
+Authentication:
+
+- Prefer the user's fixed OpenList API token for automation. Pass it as the `Authorization` header.
+- Treat the token as a full API credential. Never print it, commit it, or place it in command history when avoidable.
+- Do not cache OpenList download URLs for long periods. Call `POST /api/fs/get` immediately before downloading.
+
+After Quark save:
+
+- Always refresh the target OpenList directory with `refresh: true`.
+- The observed working flow is:
+  1. Save the Quark share with `scripts/quark-save.mjs`.
+  2. Wait for the Quark task to finish and post-save rename to complete.
+  3. Immediately call `POST /api/fs/list` on the OpenList target path with `refresh: true`.
+  4. Match the saved resource by the Agent-approved canonical name.
+- In the tested local instance, saving into Quark folder `备份资源` was visible through OpenList path `/pan/quark/备份资源` within the immediate refreshed list request.
+
+OpenList list request:
+
+```bash
+curl "$OPENLIST_URL/api/fs/list" \
+  -H "Authorization: $OPENLIST_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"path":"/pan/quark/备份资源","password":"","page":1,"per_page":100,"refresh":true}'
+```
+
+OpenList file download:
+
+```bash
+curl "$OPENLIST_URL/api/fs/get" \
+  -H "Authorization: $OPENLIST_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"path":"/pan/quark/备份资源/example.srt","password":""}'
+```
+
+If `raw_url` is returned, download it immediately:
+
+```bash
+curl -L "$RAW_URL" -o "./example.srt"
+```
+
+Server/NAS-side download rules:
+
+- Clicking "download" in the OpenList web UI downloads to the browser user's local computer. It does not make the OpenList server save the file to the server filesystem.
+- To save files on the deployment server or a NAS-mounted disk, use one of these approaches:
+  - Mount the NAS directory as an OpenList storage, for example `/nas/movies`, then use OpenList offline download into that OpenList path.
+  - Run a server-side script on the OpenList/NAS host: call `POST /api/fs/get`, read the fresh `raw_url`, then `curl -L "$RAW_URL" -o "/mounted/nas/path/file.ext"`.
+- OpenList's offline download feature downloads an external URL into storage managed by OpenList. It supports `SimpleHttp`, `aria2`, and `qBittorrent` tools. For API use, call:
+
+```bash
+curl "$OPENLIST_URL/api/fs/add_offline_download" \
+  -H "Authorization: $OPENLIST_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "path":"/nas/movies",
+    "urls":["https://example.com/file.mkv"],
+    "tool":"SimpleHttp",
+    "delete_policy":"delete_on_upload_succeed"
+  }'
+```
+
+Notes:
+
+- `path` is an OpenList path, not an arbitrary OS path. If the user wants `/mnt/nas/movies`, first mount that directory in OpenList and use its OpenList path.
+- For an existing OpenList cloud file, use `POST /api/fs/get` to obtain a fresh `raw_url`, then pass that URL to `POST /api/fs/add_offline_download` targeting the NAS-backed OpenList path.
+- If using `aria2` or `qBittorrent`, configure the tool in OpenList settings first. For Docker, make sure OpenList and the downloader share the documented temp directory mounts.
+- Poll OpenList task APIs under `/api/task/offline_download/*` and `/api/task/offline_download_transfer/*` when the user needs progress or completion status.
+
 ## Workflow
 
 1. Search the exact user keyword first.
@@ -222,3 +293,5 @@ Quark API flow used by the helper:
 5. If the user asks whether links are valid, rerun with `--check-links` or call `/api/check/links` on the visible links and include each state/summary.
 6. If `/api/health` reports `auth_enabled: true`, authenticate first or ask the user for credentials/token.
 7. If the user asks to save a Quark result into their own drive, run `scripts/quark-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script.
+8. If the user asks whether the saved Quark resource appears in OpenList, call `POST /api/fs/list` with `refresh: true` every time, then report whether the Agent-approved resource name was found.
+9. If the user asks to download into NAS/server storage, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.
