@@ -260,9 +260,42 @@ curl -L "$RAW_URL" -o "./example.srt"
 Server/NAS-side download rules:
 
 - Clicking "download" in the OpenList web UI downloads to the browser user's local computer. It does not make the OpenList server save the file to the server filesystem.
-- To save files on the deployment server or a NAS-mounted disk, use one of these approaches:
-  - Mount the NAS directory as an OpenList storage, for example `/nas/movies`, then use OpenList offline download into that OpenList path.
-  - Run a server-side script on the OpenList/NAS host: call `POST /api/fs/get`, read the fresh `raw_url`, then `curl -L "$RAW_URL" -o "/mounted/nas/path/file.ext"`.
+- To save files on the deployment server or a NAS-mounted disk, prefer mounting the NAS directory as an OpenList storage, for example `/影视资源备份/影视`, then use `POST /api/fs/copy` from the cloud-drive mount into that NAS-backed path.
+- If copy is not possible, use OpenList offline download into the NAS-backed OpenList path, or run a server-side script on the OpenList/NAS host: call `POST /api/fs/get`, read the fresh `raw_url`, then `curl -L "$RAW_URL" -o "/mounted/nas/path/file.ext"`.
+
+OpenList copy to NAS backup:
+
+- Use this when the user specifies a backup directory, such as a NAS/SMB-mounted OpenList path.
+- Before executing copy, tell the user:
+  - Source: the OpenList source directory that contains the saved resource, for example `/pan/quark/备份资源`.
+  - Object: the exact `names[]` item that will be copied, for example `钢铁侠与美国队长：英雄集结 (2014)`.
+  - Destination and naming: the target OpenList directory, for example `/影视资源备份/影视`, and the final path/name that will appear there.
+- Prefer `copy` over `move`. Use `move` only if the user explicitly asks to remove the source after backup.
+- Always refresh source and target directories with `refresh: true` before and after copy.
+- After `POST /api/fs/copy`, record the returned copy task id, poll `/api/task/copy/info`, then list the destination path with `refresh: true` until the copied folder/file appears and expected file sizes match.
+
+Example copy request:
+
+```bash
+curl "$OPENLIST_URL/api/fs/copy" \
+  -H "Authorization: $OPENLIST_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "src_dir":"/pan/quark/备份资源",
+    "dst_dir":"/影视资源备份/影视",
+    "names":["钢铁侠与美国队长：英雄集结 (2014)"]
+  }'
+```
+
+Copy verification:
+
+```bash
+curl "$OPENLIST_URL/api/fs/list" \
+  -H "Authorization: $OPENLIST_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"path":"/影视资源备份/影视/钢铁侠与美国队长：英雄集结 (2014)","password":"","page":1,"per_page":100,"refresh":true}'
+```
+
 - OpenList's offline download feature downloads an external URL into storage managed by OpenList. It supports `SimpleHttp`, `aria2`, and `qBittorrent` tools. For API use, call:
 
 ```bash
@@ -280,6 +313,7 @@ curl "$OPENLIST_URL/api/fs/add_offline_download" \
 Notes:
 
 - `path` is an OpenList path, not an arbitrary OS path. If the user wants `/mnt/nas/movies`, first mount that directory in OpenList and use its OpenList path.
+- For NAS/SMB backup, `POST /api/fs/copy` is usually more reliable than offline download because OpenList handles cloud-to-mounted-storage transfer as a copy task.
 - For an existing OpenList cloud file, use `POST /api/fs/get` to obtain a fresh `raw_url`, then pass that URL to `POST /api/fs/add_offline_download` targeting the NAS-backed OpenList path.
 - If using `aria2` or `qBittorrent`, configure the tool in OpenList settings first. For Docker, make sure OpenList and the downloader share the documented temp directory mounts.
 - Poll OpenList task APIs under `/api/task/offline_download/*` and `/api/task/offline_download_transfer/*` when the user needs progress or completion status.
@@ -294,4 +328,5 @@ Notes:
 6. If `/api/health` reports `auth_enabled: true`, authenticate first or ask the user for credentials/token.
 7. If the user asks to save a Quark result into their own drive, run `scripts/quark-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script.
 8. If the user asks whether the saved Quark resource appears in OpenList, call `POST /api/fs/list` with `refresh: true` every time, then report whether the Agent-approved resource name was found.
-9. If the user asks to download into NAS/server storage, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.
+9. If the user asks to back up into a NAS/SMB OpenList storage, state the source path, exact object name, target backup directory, and final naming before execution; then use `POST /api/fs/copy`, poll copy task status, and verify the destination with `refresh: true`.
+10. If the user asks to download into NAS/server storage and copy is not suitable, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.
