@@ -1,11 +1,19 @@
 ---
 name: resource-2-nas
-description: Use when a user asks to search for movie, TV, animation, or other media resources, save Quark or Baidu shares into cloud drive, verify through OpenList, or copy saved resources to NAS/SMB storage.
+description: Use when a user asks to search for movie, TV, animation, or other media resources; provides a Quark/Baidu share link to save; wants to verify saved resources through OpenList; wants to view/cancel OpenList transfer task progress; or wants to copy saved resources to NAS/SMB storage.
 ---
 
 # Resource 2 NAS
 
-Use this skill when the user asks to search for a movie/TV/media title or asks for download/resource links. The default upstream is the PanSou instance at `https://so.252035.xyz/`, backed by the `fish2018/pansou` API.
+Use this skill when the user enters any stage of a media-to-NAS workflow:
+
+- Search stage: they ask to search a movie, TV show, animation, or media title and need ranked Baidu/Quark resource links.
+- Share-link stage: they already have a Quark or Baidu share URL and want it saved into their own cloud drive.
+- Verification stage: they want to check whether a saved resource is visible in OpenList.
+- Task stage: they want to view, diagnose, or cancel OpenList copy/offline-download task progress.
+- Backup stage: they want to copy a saved cloud-drive resource into a NAS/SMB-backed OpenList path.
+
+The default search upstream is the PanSou instance at `https://so.252035.xyz/`, backed by the `fish2018/pansou` API.
 
 Use `scripts/quark-save.mjs` when the user wants to save a Quark share link into their own Quark cloud drive folder. Use `scripts/baidu-save.mjs` when the user wants to save a Baidu Netdisk share link into their own Baidu cloud drive path. These workflows transfer the resource into the user's cloud drive only; they do not download files to the local filesystem.
 
@@ -21,7 +29,11 @@ For OpenClaw, Hermes, or any delegated sub Agent, read `SUBAGENT.md` first. Sub 
 | Cookie check | `npm run check-cookies` |
 | Quark preview | `node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" --dry-run --format json` |
 | Baidu preview | `node scripts/baidu-save.mjs "$SHARE_URL" "$DEST_PATH_OR_URL" --dry-run --format json` |
+| OpenList task progress | `npm run openlist-tasks -- list copy undone --format json` |
+| OpenList cancel preview | `npm run openlist-tasks -- cancel copy undone --provider baidu --format json` |
+| OpenList copy preview | `npm run openlist-copy -- "$SRC_DIR" "$DST_DIR" "$NAME" --format json` |
 | Confirmed save | Re-run the preview command with `--yes --format json` after user/supervisor confirmation. |
+| Confirmed OpenList copy/cancel | Re-run the preview command with `--yes --format json` after user/supervisor confirmation. |
 
 ## First-Time ENV Setup
 
@@ -435,28 +447,48 @@ OpenList copy to NAS backup:
   - Destination and naming: the target OpenList directory, for example `/影视资源备份/影视`, and the final path/name that will appear there.
 - Prefer `copy` over `move`. Use `move` only if the user explicitly asks to remove the source after backup.
 - Always refresh source and target directories with `refresh: true` before and after copy.
-- After `POST /api/fs/copy`, record the returned copy task id, poll `/api/task/copy/info`, then list the destination path with `refresh: true` until the copied folder/file appears and expected file sizes match.
+- Prefer the bundled script instead of hand-written curl. It previews source and target first, then after confirmation calls `POST /api/fs/copy`, polls `/api/task/copy/undone` and `/api/task/copy/done`, and refreshes the target directory until the copied folder/file appears.
+- Do not treat a task disappearing from `undone` as failure by itself. First check `done` tasks and the refreshed destination directory.
+- If the preview output has `destination.existingTargetNames`, tell the user the target already contains same-named items and require explicit confirmation before `--yes`.
 
-Example copy request:
+Copy preview:
 
 ```bash
-curl "$OPENLIST_URL/api/fs/copy" \
-  -H "Authorization: $OPENLIST_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data '{
-    "src_dir":"/pan/quark/备份资源",
-    "dst_dir":"/影视资源备份/影视",
-    "names":["钢铁侠与美国队长：英雄集结 (2014)"]
-  }'
+npm run openlist-copy -- \
+  "/pan/quark/备份资源" \
+  "/影视资源备份/影视" \
+  "钢铁侠与美国队长：英雄集结 (2014)" \
+  --format json
 ```
 
-Copy verification:
+Confirmed copy after the user/supervisor approves source, object, destination, and final naming:
 
 ```bash
-curl "$OPENLIST_URL/api/fs/list" \
-  -H "Authorization: $OPENLIST_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data '{"path":"/影视资源备份/影视/钢铁侠与美国队长：英雄集结 (2014)","password":"","page":1,"per_page":100,"refresh":true}'
+npm run openlist-copy -- \
+  "/pan/quark/备份资源" \
+  "/影视资源备份/影视" \
+  "钢铁侠与美国队长：英雄集结 (2014)" \
+  --yes \
+  --format json
+```
+
+OpenList task progress and cancellation:
+
+- Use this when the user asks whether copy/offline-download/upload tasks are still running, or asks to cancel stuck tasks.
+- Task groups: `copy`, `offline_download`, `offline_download_transfer`, `upload`, `decompress`, `decompress_upload`.
+- Task states: `undone`, `done`.
+- `openlist-tasks` defaults to `list copy undone` and outputs Agent JSON.
+- Cancellation is preview-only unless `--yes` is passed.
+- If the user says "only Quark" or "cancel Baidu", filter by provider before taking action. Do not start or continue the other provider.
+- Do not create background retry loops or recurring jobs unless the user explicitly asks for them.
+
+Task examples:
+
+```bash
+npm run openlist-tasks -- list copy undone --format json
+npm run openlist-tasks -- list offline_download undone --format json
+npm run openlist-tasks -- cancel copy undone --provider baidu --format json
+npm run openlist-tasks -- cancel copy undone --provider baidu --yes --format json
 ```
 
 - OpenList's offline download feature downloads an external URL into storage managed by OpenList. It supports `SimpleHttp`, `aria2`, and `qBittorrent` tools. For API use, call:
@@ -493,5 +525,6 @@ Notes:
 8. If the user asks to save a Quark result into their own drive, run `scripts/quark-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script. Use `QUARK_DEFAULT_SAVE_URL` when the user does not specify a save folder.
 9. If the user asks to save a Baidu result into their own drive, run `scripts/baidu-save.mjs --dry-run`, tell the user what resource rows were found and whether the Agent judges it to be a series, then save only after confirmation/Cookie availability. Pass the Agent's canonical name and resource type to the script. Use `BAIDU_DEFAULT_SAVE_PATH` when the user does not specify a save folder.
 10. If the user asks whether the saved cloud-drive resource appears in OpenList, call `POST /api/fs/list` with `refresh: true` every time, then report whether the Agent-approved resource name was found.
-11. If the user asks to back up into a NAS/SMB OpenList storage, state the source path, exact object name, target backup directory, and final naming before execution; then use `POST /api/fs/copy`, poll copy task status, and verify the destination with `refresh: true`. Use `OPENLIST_DEFAULT_COPY_DST_PATH` when the user does not specify a target.
-12. If the user asks to download into NAS/server storage and copy is not suitable, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.
+11. If the user asks about current OpenList transfer progress, run `npm run openlist-tasks -- list copy undone --format json` or the matching task group; report task ids, names, progress, and errors. If they ask to cancel, preview first and require confirmation before adding `--yes`.
+12. If the user asks to back up into a NAS/SMB OpenList storage, state the source path, exact object name, target backup directory, and final naming before execution; then use `npm run openlist-copy -- "$SRC_DIR" "$DST_DIR" "$NAME" --yes --format json` after confirmation. Use `OPENLIST_DEFAULT_COPY_DST_PATH` when the user does not specify a target.
+13. If the user asks to download into NAS/server storage and copy is not suitable, do not click browser download. Use OpenList offline download into a NAS-backed OpenList storage path, or run a server-side download script using a fresh `raw_url` from `POST /api/fs/get`.

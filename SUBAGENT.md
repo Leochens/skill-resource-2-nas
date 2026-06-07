@@ -1,6 +1,6 @@
 # Sub-Agent Runbook
 
-Use this file when OpenClaw, Hermes, or another sub Agent is delegated a media search, cloud save, or NAS/OpenList copy task.
+Use this file when OpenClaw, Hermes, or another sub Agent is delegated a media search, direct share-link save, OpenList visibility check, OpenList task progress/cancel, or NAS/OpenList copy task.
 
 ## Hard Rules
 
@@ -8,6 +8,8 @@ Use this file when OpenClaw, Hermes, or another sub Agent is delegated a media s
 - Do not use `--yes` until the user or supervising Agent has confirmed the preview payload, unless the task explicitly includes `confirmed: true`.
 - Prefer `--format json` or `--json` for every script call that supports it. Do not parse Markdown when JSON is available.
 - Search defaults to Baidu Netdisk and Quark Netdisk with a 50-result candidate cap. Only broaden `--cloud-types` when the user asks for other providers.
+- If the user specifies a provider, such as "只要夸克" or "取消百度", act only on that provider. Do not start, retry, copy, or report another provider as an acceptable substitute.
+- Do not create background retry loops, cron jobs, or recurring automations unless the user explicitly asks for them.
 - Readiness validation is an Agent JSON tool. Run `npm run check-ready` before real saves/copies on fresh installs or after auth/path errors, and continue only when `nextAction` is `ready`.
 - Quark and Baidu are alternatives. A complete configuration needs at least one reachable provider, not both.
 - Quark save targets may be full folder URLs or cloud-drive paths like `/备份资源`.
@@ -25,7 +27,10 @@ Use this file when OpenClaw, Hermes, or another sub Agent is delegated a media s
 | Check Cookie validity | `npm run check-cookies` | none |
 | Save Quark share | `node scripts/quark-save.mjs "$SHARE_URL" "$DEST_URL" --dry-run --json` | Same command with `--yes --json` after confirmation |
 | Save Baidu share | `node scripts/baidu-save.mjs "$SHARE_URL" "$DEST_PATH_OR_URL" --dry-run --json` | Same command with `--yes --json` after confirmation |
-| Copy saved resource to NAS/OpenList | `POST /api/fs/list` on source and target with `refresh:true` | `POST /api/fs/copy`, then poll copy task and verify target |
+| View OpenList copy progress | `npm run openlist-tasks -- list copy undone --format json` | none |
+| View OpenList offline download progress | `npm run openlist-tasks -- list offline_download undone --format json` | none |
+| Cancel OpenList tasks | `npm run openlist-tasks -- cancel copy undone --provider "$PROVIDER" --format json` | Same command with `--yes --format json` after confirmation |
+| Copy saved resource to NAS/OpenList | `npm run openlist-copy -- "$SRC_DIR" "$DST_DIR" "$NAME" --format json` | Same command with `--yes --format json` after confirmation |
 
 ## JSON Preview Contract
 
@@ -129,7 +134,8 @@ After confirmation, replace `--dry-run` with `--yes`.
 | Extraction code failure | Ask for the correct code; pass with `--passcode`. |
 | `errno` is not `0` after Baidu save | Report the errno and message; do not claim success. |
 | Quark save returns no `task_id` | Report the API response summary; do not retry blindly. |
-| OpenList copy task fails | Poll the copy task endpoint, report task error, and verify both source and target with `refresh:true`. |
+| OpenList copy task disappears | Do not call it failed yet. Check `copy/done` and refresh the destination directory. |
+| OpenList copy task fails | Use `npm run openlist-tasks -- list copy done --format json`, report task error, and verify both source and target with `refresh:true`. |
 
 ## OpenList Copy Protocol
 
@@ -140,4 +146,37 @@ Before `fs/copy`, state:
 - Destination directory: OpenList NAS/SMB path.
 - Final path/name: expected resulting path.
 
-Then call `fs/copy`, poll `/api/task/copy/info`, and list the destination with `refresh:true` until the copied item appears.
+Use the bundled copy script:
+
+```bash
+npm run openlist-copy -- "$SRC_DIR" "$DST_DIR" "$NAME" --format json
+```
+
+After confirmation:
+
+```bash
+npm run openlist-copy -- "$SRC_DIR" "$DST_DIR" "$NAME" --yes --format json
+```
+
+The script calls `fs/copy`, checks `copy/undone`, checks `copy/done`, and lists the destination with `refresh:true` until the copied item appears. A task missing from `undone` is not failure unless `done` or the destination check also shows failure.
+
+If the preview returns `destination.existingTargetNames`, tell the user the target already contains same-named items and require explicit confirmation before `--yes`.
+
+## OpenList Task Protocol
+
+Use `openlist-tasks` when the user asks to inspect or cancel running OpenList jobs:
+
+```bash
+npm run openlist-tasks -- list copy undone --format json
+npm run openlist-tasks -- list copy done --format json
+npm run openlist-tasks -- cancel copy undone --provider baidu --format json
+npm run openlist-tasks -- cancel copy undone --provider baidu --yes --format json
+```
+
+Available task groups: `copy`, `offline_download`, `offline_download_transfer`, `upload`, `decompress`, `decompress_upload`.
+
+Cancellation rules:
+
+- First run without `--yes` and show matched task ids/names/progress/errors.
+- Only run with `--yes` after user/supervisor confirmation.
+- Use `--provider baidu`, `--provider quark`, `--ids`, or `--match` to avoid canceling unrelated work.

@@ -1,6 +1,6 @@
 # Resource 2 NAS Skill
 
-Codex skill for searching movie and TV resources through PanSou, returning ranked Baidu/Quark cloud-disk links, and helping users save Quark or Baidu share links into their own cloud drives. It also documents an OpenList/NAS copy flow for backing saved resources up to mounted storage.
+Codex skill for the whole media-to-NAS path. Users can enter from different stages: search a title through PanSou, provide a Quark/Baidu share link directly, verify saved resources through OpenList, inspect/cancel current OpenList transfer tasks, or copy saved resources into NAS/SMB-mounted OpenList storage.
 
 ## Features
 
@@ -12,6 +12,7 @@ Codex skill for searching movie and TV resources through PanSou, returning ranke
 - Save Baidu shares to a configured Baidu path or Baidu folder URL.
 - Let the Agent classify resources as movie, series, or collection before saving.
 - Verify saved resources through OpenList and copy them to an SMB/NAS-backed OpenList path.
+- List OpenList copy/offline-download task progress and cancel matched stuck tasks after confirmation.
 
 ## Requirements
 
@@ -82,6 +83,18 @@ Preview a Baidu share:
 npm run baidu-save -- "$BAIDU_SHARE_URL" "$BAIDU_DEFAULT_SAVE_PATH" --dry-run
 ```
 
+List current OpenList copy tasks:
+
+```bash
+npm run openlist-tasks -- list copy undone --format json
+```
+
+Preview a NAS/OpenList copy:
+
+```bash
+npm run openlist-copy -- "/pan/quark/备份资源" "$OPENLIST_DEFAULT_COPY_DST_PATH" "资源名" --format json
+```
+
 Save after review:
 
 ```bash
@@ -109,7 +122,7 @@ npm test
 
 ```text
 agents/              Agent metadata
-scripts/             CLI helpers for search, env/Cookie checks, Quark save, and Baidu save
+scripts/             CLI helpers for search, env/Cookie checks, cloud saves, OpenList tasks, and OpenList copy
 tests/               Node test suite
 SKILL.md             Main skill instructions
 SUBAGENT.md          Sub-agent runbook for OpenClaw, Hermes, and similar agents
